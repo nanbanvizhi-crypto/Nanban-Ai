@@ -1,9 +1,16 @@
-"""🇮🇳 India Lab tab — futuristic red+blue team learning hub, Tanglish, easy UX."""
+"""🇮🇳 India Lab tab — futuristic red+blue team learning hub, Tanglish, hands-on.
+
+Not just reading cards: every topic has live AI lab actions (attack walkthrough,
+defense playbook, build-a-mini-lab, practice challenge), a graded quiz, and XP /
+badges so it feels like a real lab you make progress in.
+"""
 
 import gradio as gr
 
 import india_lab as il
 import llm
+
+MAXQ = 3   # how many quiz questions we render per topic
 
 # Inline CSS loaded with the content — beats Gradio's .prose wrapper that otherwise
 # forces block layout on gr.HTML children. Key layout props use !important.
@@ -13,11 +20,11 @@ _INLINE_CSS = """<style>
 .prose .il-card, .il-card { border-radius: 16px !important; padding: 15px 15px 13px !important;
   background: var(--block-background-fill, #fff) !important; border: 1px solid var(--border-color-primary, #e5e7eb) !important;
   transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease; }
-.il-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(20,30,60,.18); border-color: #ff9a3c !important; }
+.il-card:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(28,32,20,.14); border-color: var(--nb-accent, #a9d31f) !important; }
 .il-card-top { display: flex !important; justify-content: space-between; align-items: center; }
 .il-ico { font-size: 1.7rem; }
-.il-fut { font-size: .64rem; font-weight: 700; color: #7c3aed; background: rgba(124,58,237,.12);
-  border: 1px solid rgba(124,58,237,.30); padding: 2px 7px; border-radius: 999px; }
+.il-fut { font-size: .64rem; font-weight: 700; color: #4f6318; background: rgba(169,211,31,.16);
+  border: 1px solid #d6ef9a; padding: 2px 7px; border-radius: 999px; }
 .il-past { font-size: .64rem; font-weight: 700; color: #9a6a00; background: rgba(214,158,46,.14);
   border: 1px solid rgba(214,158,46,.35); padding: 2px 7px; border-radius: 999px; margin-left: 4px; }
 .il-run { font-size: .64rem; font-weight: 700; color: #0e7490; background: rgba(14,116,144,.12);
@@ -33,24 +40,54 @@ _INLINE_CSS = """<style>
 .il-atk { color: #c0392b; background: rgba(192,57,43,.10); border: 1px solid rgba(192,57,43,.25); }
 .il-def { color: #1f8a4c; background: rgba(31,138,76,.10); border: 1px solid rgba(31,138,76,.25); }
 .il-empty { text-align: center; padding: 30px; color: var(--body-text-color-subdued, #6b7280); }
-.il-hero { border-radius: 20px !important; padding: 26px 24px !important; text-align: center; color: #eaf2ff !important;
-  background: radial-gradient(1200px 300px at 20% -40%, rgba(255,153,51,.30), transparent 60%),
-    radial-gradient(1000px 320px at 90% 140%, rgba(19,136,8,.32), transparent 60%),
-    linear-gradient(135deg, #0b1020 0%, #121a33 55%, #0b1428 100%) !important;
-  box-shadow: 0 10px 40px rgba(10,18,40,.35); position: relative; overflow: hidden; }
-.il-hero-badge { display: inline-block; font-size: .72rem; letter-spacing: .14em; font-weight: 700;
-  padding: 5px 12px; border-radius: 999px; margin-bottom: 10px; background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.18); color: #cfe0ff !important; }
-.il-hero h1 { margin: 2px 0 8px !important; font-size: 1.9rem !important; color: #ffd27a !important; }
-.il-hero p { margin: 0 auto 12px; max-width: 640px; color: #b9c6e4 !important; font-size: .96rem; }
-.il-hero .il-safe { font-size: .82rem; color: #ffe0b8 !important; background: rgba(255,153,51,.12);
-  border: 1px solid rgba(255,153,51,.30); border-radius: 12px; padding: 9px 13px; max-width: 760px; margin: 0 auto; }
+.il-hero { border-radius: 24px !important; padding: 28px 26px !important; text-align: center; color: #1a1f17 !important;
+  background: radial-gradient(760px 260px at 12% -36%, rgba(191,230,58,.45), transparent 60%),
+    radial-gradient(760px 280px at 92% 134%, rgba(255,176,138,.42), transparent 60%),
+    linear-gradient(135deg, #ffffff 0%, #f7f9ef 55%, #ffffff 100%) !important;
+  box-shadow: 0 14px 44px rgba(28,32,20,.10); border: 1px solid #ecefe2; position: relative; overflow: hidden; }
+.il-hero-badge { display: inline-block; font-size: .72rem; letter-spacing: .14em; font-weight: 800;
+  padding: 5px 12px; border-radius: 999px; margin-bottom: 10px; background: rgba(169,211,31,.16);
+  border: 1px solid #d6ef9a; color: #4f6318 !important; }
+.il-hero h1 { margin: 2px 0 8px !important; font-size: 2rem !important; font-weight: 800 !important;
+  letter-spacing: -.03em !important; color: #141514 !important; }
+.il-hero p { margin: 0 auto 12px; max-width: 640px; color: #5a6152 !important; font-size: .96rem; }
+.il-hero .il-safe { font-size: .82rem; color: #7a5a2a !important; background: rgba(255,176,138,.16);
+  border: 1px solid #f0d6b8; border-radius: 14px; padding: 9px 13px; max-width: 760px; margin: 0 auto; }
+#il-progress { border-radius: 16px; padding: 12px 16px; margin-top: 10px;
+  background: linear-gradient(135deg, rgba(191,230,58,.20), rgba(255,176,138,.16));
+  border: 1px solid var(--border-color-primary, #ecefe2); font-size: .92rem; }
+#il-workbench { border: 1px solid var(--border-color-primary, #e5e7eb); border-radius: 16px;
+  padding: 14px 16px; margin-top: 12px; background: var(--block-background-fill, #fff); }
+#il-actionbar button { font-size: .86rem !important; }
+#il-actout { min-height: 1.5em; }
 @media (max-width: 640px) { .il-hero h1 { font-size: 1.5rem !important; } }
 </style>"""
 
 
+def _quiz_updates(did: str):
+    """Return (radio_update x MAXQ, submit_update, note_update) for a topic."""
+    qs = il.quiz_for(did)
+    radios = []
+    for i in range(MAXQ):
+        if i < len(qs):
+            item = qs[i]
+            radios.append(gr.update(visible=True, label=f"Q{i+1}. {item['q']}",
+                                    choices=item["opts"], value=None))
+        else:
+            radios.append(gr.update(visible=False, value=None))
+    if qs:
+        submit = gr.update(visible=True)
+        note = gr.update(value="", visible=False)
+    else:
+        submit = gr.update(visible=False)
+        note = gr.update(
+            value="_Indha topic-ku graded quiz innum varala. Keezha lab actions use pannu, "
+                  "illa Tutor-kitta 'quiz kudu' nu kelu._", visible=True)
+    return radios + [submit, note]
+
+
 def build():
-    sel = gr.State("")
+    sel = gr.State(il.DOMAINS[0]["id"])
 
     with gr.Column(elem_id="il-wrap"):
         gr.HTML(_INLINE_CSS +
@@ -58,11 +95,13 @@ def build():
             '<div class="il-hero-badge">🇮🇳 INDIA LAB · red team + blue team</div>'
             '<h1>Future-ready Security Lab</h1>'
             '<p>Modern + future technologies — <b>attack epdi nadakudhu</b> purinjikaradhu, '
-            '<b>defend epdi pandradhu</b> master pannradhu. Ellame Tanglish la, easy-ah.</p>'
+            '<b>defend epdi pandradhu</b> master pannradhu. Hands-on: actions, quiz, XP — ellame Tanglish la.</p>'
             '<div class="il-safe">⚖️ Practice = un sontha lab · permission irukkura target · '
             'practice-ku-made targets (Metasploitable, DVWA, TryHackMe, HTB, OWASP) mattum. '
             'Veliya real system = illegal — Nanban help pannadhu.</div>'
             '</div>')
+
+        header = gr.Markdown(il.progress_header(), elem_id="il-progress")
 
         with gr.Row(elem_id="il-filters"):
             level = gr.Radio(choices=["All"] + il.levels_available() + [il.ERA_PAST], value="All",
@@ -75,16 +114,41 @@ def build():
             gr.Markdown(il.kill_chain_markdown())
             gr.Markdown(il.defense_stack_markdown())
 
-        gr.Markdown("### 📚 Technology domains — attack + defend by area")
+        gr.Markdown("### 📚 Technology domains — pick one to open the hands-on workbench")
         grid = gr.HTML(il.cards_html(), elem_id="il-gridwrap")
 
         with gr.Row(elem_id="il-jump"):
             picker = gr.Dropdown(
                 choices=[(f'{d["icon"]} {d["name"]}', d["id"]) for d in il.DOMAINS],
-                value=None, show_label=False, container=False,
-                info="Oru topic thernedu — full attack + defend + practice paaru")
+                value=il.DOMAINS[0]["id"], show_label=False, container=False,
+                info="Oru topic thernedu — detail + lab actions + quiz open aagum")
 
         detail = gr.Markdown(il.detail_markdown(il.DOMAINS[0]["id"]), elem_id="il-detail")
+
+        # ---------------- hands-on workbench ----------------
+        with gr.Column(elem_id="il-workbench"):
+            gr.Markdown("### 🧪 Lab actions — oru button press pannu, Nanban live-ah kathu tharum")
+            with gr.Row(elem_id="il-actionbar"):
+                act_btns = {}
+                for label, key in il.action_labels():
+                    act_btns[key] = gr.Button(label, size="sm",
+                                              variant=("primary" if key == "defend" else "secondary"))
+            act_out = gr.Markdown("", elem_id="il-actout")
+
+            gr.Markdown("### ❓ Quick quiz — paathu purinjaacha nu check pannu (+XP)")
+            _first_quiz = il.quiz_for(il.DOMAINS[0]["id"])
+            quiz_note = gr.Markdown("", visible=not _first_quiz)
+            radios = []
+            for i in range(MAXQ):
+                if i < len(_first_quiz):
+                    item = _first_quiz[i]
+                    radios.append(gr.Radio(choices=item["opts"], label=f"Q{i+1}. {item['q']}",
+                                           value=None, visible=True))
+                else:
+                    radios.append(gr.Radio(choices=[], label=f"Q{i+1}", visible=False))
+            quiz_btn = gr.Button("✅ Check answers", variant="primary", size="sm",
+                                 visible=bool(_first_quiz))
+            quiz_result = gr.Markdown("")
 
         with gr.Accordion("🧑‍🏫 Ask the Lab Tutor (Tanglish)", open=False, elem_id="il-tutor"):
             gr.Markdown("Entha doubt venaalum kelu — attack concept, defense, oru tool epdi "
@@ -96,7 +160,7 @@ def build():
 
         gr.Markdown(il.platforms_markdown(), elem_id="il-platforms")
 
-    # ---- wiring
+    # ---------------- wiring ----------------
     def _refresh(lv, qy):
         return il.cards_html(lv, qy)
 
@@ -104,10 +168,50 @@ def build():
     search.change(_refresh, [level, search], grid)
 
     def _pick(did):
-        return il.detail_markdown(did), (did or "")
+        did = did or il.DOMAINS[0]["id"]
+        il.credit_study(did)                       # small XP for studying (once per topic)
+        quiz_bits = _quiz_updates(did)             # MAXQ radios + submit + note
+        return ([il.detail_markdown(did), did, il.progress_header(), "", ""] + quiz_bits)
 
-    picker.change(_pick, picker, [detail, sel])
+    picker.change(
+        _pick, picker,
+        [detail, sel, header, act_out, quiz_result] + radios + [quiz_btn, quiz_note])
 
+    # live AI lab actions
+    def _make_action(kind):
+        def _run(did):
+            did = did or il.DOMAINS[0]["id"]
+            msgs = il.action_prompt(did, kind)
+            if not msgs:
+                yield "Oru topic select pannu."
+                return
+            acc = ""
+            try:
+                for chunk in llm.chat(msgs, tools=None, options={"temperature": 0.4}):
+                    piece = getattr(getattr(chunk, "message", None), "content", "") or ""
+                    if piece:
+                        acc += piece
+                        yield acc
+                if not acc:
+                    yield "Reply varala. Chat tab-la oru model select panni, apuram try pannu."
+            except Exception as e:
+                yield f"AI-ah reach panna mudiyala ({e}). Ollama / model running-ah nu paaru."
+        return _run
+
+    for key, btn in act_btns.items():
+        btn.click(_make_action(key), sel, act_out)
+
+    # quiz grading
+    def _grade(did, *answers):
+        did = did or il.DOMAINS[0]["id"]
+        md, _passed = il.grade_quiz(did, list(answers))
+        if not md:
+            return gr.update(value="_Indha topic-ku quiz illa._"), gr.update()
+        return gr.update(value=md), gr.update(value=il.progress_header())
+
+    quiz_btn.click(_grade, [sel] + radios, [quiz_result, header])
+
+    # tutor
     def _ask(question, did):
         question = (question or "").strip()
         if not question:

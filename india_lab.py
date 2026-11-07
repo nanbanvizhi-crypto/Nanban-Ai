@@ -523,3 +523,227 @@ def tutor_prompt(question: str, did: str = "") -> list[dict]:
         "redirect to a lab target. Be clear, encouraging, and practical." + ctx)
     return [{"role": "system", "content": sys},
             {"role": "user", "content": question}]
+
+
+# ================================================================ interactive lab
+# Everything below turns India Lab from a reading page into a hands-on lab:
+#   - graded quizzes (instant, offline),
+#   - live AI "actions" per topic (attack walkthrough / defense playbook / mini-lab / challenge),
+#   - XP + progress via progress.py.
+# All content stays defense-first and scoped to the learner's OWN lab / legal platforms.
+
+import progress
+
+# Curated quizzes - accurate security fundamentals. did -> [ {q, opts, a (index), why} ].
+QUIZ = {
+    "web": [
+        {"q": "SQL injection-ah stop panna BEST way edhu?",
+         "opts": ["Parameterised queries / prepared statements", "Error messages-ah hide pannu",
+                  "DB password periya-dhaka vai", "Database-ah rename pannu"],
+         "a": 0, "why": "Parameterised queries user input-ah data-ah treat pannum, code-ah illa - so injection velai aagadhu."},
+        {"q": "XSS attack victim browser-la enna pannudhu?",
+         "opts": ["Attacker script victim browser-la run aagum", "Database delete aagum",
+                  "Server hardware crash aagum", "WiFi password leak aagum"],
+         "a": 0, "why": "XSS = malicious script user browser-la execute. Defense: output encoding + CSP."},
+        {"q": "IDOR vulnerability enna?",
+         "opts": ["URL/ID maathina vera user-oda data access aagradhu", "Romba login attempts",
+                  "Weak WiFi", "Old TLS version"],
+         "a": 0, "why": "IDOR = object reference authorization check illama direct access. Fix: server-side access control."},
+    ],
+    "network": [
+        {"q": "nmap -sV flag enna kaatudhu?",
+         "opts": ["Open ports-la service + version", "Veren ping mattum", "Password crack", "Ports delete"],
+         "a": 0, "why": "-sV = service/version detection - entha service, entha version nu kaatum."},
+        {"q": "Attack surface kammi panna best step?",
+         "opts": ["Theva illadha ports/services close pannu", "Faster CPU", "More RAM", "Bright screen"],
+         "a": 0, "why": "Evlo kammi exposed service, avlo kammi entry point attacker-ku."},
+        {"q": "Network segmentation (VLAN) enna help pannudhu?",
+         "opts": ["Oru machine compromise aanalum lateral movement thadukkum", "Internet speed increase",
+                  "Password strength kooda pannum", "Disk space free pannum"],
+         "a": 0, "why": "Segmentation attacker evlo thooram nagara mudiyum-nu limit pannum."},
+    ],
+    "passwords": [
+        {"q": "Password storage-ku best method?",
+         "opts": ["bcrypt/argon2 with salt", "Plain text", "MD5 mattum", "Base64 encode"],
+         "a": 0, "why": "Slow, salted hashes (bcrypt/argon2) cracking-ah kashtam-aakkum. MD5/plain = weak."},
+        {"q": "MFA / 2FA-oda main benefit?",
+         "opts": ["Password leak aanalum second factor venum, so account safe", "Internet fast aagum",
+                  "Password remember panna theva illa", "CAPTCHA venaam"],
+         "a": 0, "why": "Stolen password mattum pothadhu - second factor login-ah thadukkum."},
+        {"q": "Brute-force-ah server-side-la thaduka?",
+         "opts": ["Account lockout + rate limiting", "Longer username", "Port maathu", "Cookies off"],
+         "a": 0, "why": "Rate-limit/lockout guessing-ah slow/stop pannum."},
+    ],
+    "wireless": [
+        {"q": "WiFi-ku strongest current standard edhu?",
+         "opts": ["WPA3", "WEP", "Open (no password)", "WPA-TKIP (old)"],
+         "a": 0, "why": "WPA3 > WPA2-AES. WEP/Open romba insecure."},
+        {"q": "WPS-ah off panradhu yen?",
+         "opts": ["WPS PIN brute-force-ku weak", "Speed kammi aagum", "Range kammi aagum", "Battery waste"],
+         "a": 0, "why": "WPS PIN oru well-known weak point - off pannradhu safe."},
+        {"q": "WiFi handshake capture pannina attacker enna pannuvanga?",
+         "opts": ["Offline-la password crack panna try pannuvanga", "Router restart", "Firmware update", "Signal boost"],
+         "a": 0, "why": "Captured handshake -> offline dictionary/brute. Defense: long strong passphrase."},
+    ],
+    "osint": [
+        {"q": "OSINT nu-na enna?",
+         "opts": ["Publicly available info sekarichu target purinjikaradhu", "Encryption break pannradhu",
+                  "Malware install", "DDoS"],
+         "a": 0, "why": "Open-Source INTelligence = public data (web, social, leaks) gathering."},
+        {"q": "Photo-la enna sensitive thing leak aagalaam?",
+         "opts": ["Metadata (EXIF location)", "CPU model", "RAM size", "Screen brightness"],
+         "a": 0, "why": "EXIF-la GPS/location irukkalaam. Defense: metadata strip (exiftool)."},
+        {"q": "OSINT-ku best defense?",
+         "opts": ["Digital footprint + oversharing kammi, metadata strip", "Faster internet",
+                  "Bigger password", "New phone"],
+         "a": 0, "why": "Attacker-ku kammi public info kidaichaa recon kashtam."},
+    ],
+    "exploit": [
+        {"q": "Exploitation stage-la attacker-oda goal?",
+         "opts": ["Vulnerability trigger panni initial access vaanguradhu", "Backup eduppadhu",
+                  "Patch podaradhu", "Logs clear mattum"],
+         "a": 0, "why": "Exploitation = oru vuln-ah use panni access kedaikradhu."},
+        {"q": "Known CVE-ku best defense?",
+         "opts": ["Patch / update fast", "Ignore pannu", "Longer password", "Logs off"],
+         "a": 0, "why": "Patching theriyira hole-ah close pannum."},
+        {"q": "Exploit aanalum damage kammi panna?",
+         "opts": ["Least privilege (user admin illa)", "More browser tabs", "Bigger monitor", "Fast typing"],
+         "a": 0, "why": "Low privilege = blast radius chinnadhu."},
+    ],
+    "forensics": [
+        {"q": "Digital forensics-oda mukkiya goal?",
+         "opts": ["Evidence collect + preserve panni analyse pandradhu", "Attack panradhu",
+                  "Password crack", "Website design"],
+         "a": 0, "why": "Blue-team work: evidence-ah preserve + analyse pannradhu."},
+        {"q": "YARA rules edhukku use aagudhu?",
+         "opts": ["Malware pattern match / detect", "WiFi crack", "Disk format", "DNS lookup"],
+         "a": 0, "why": "YARA = pattern-based malware detection rules."},
+        {"q": "Suspected malware-ah enga analyse pannanum?",
+         "opts": ["Isolated VM-la", "Un main laptop-la", "Office server-la", "Un phone-la"],
+         "a": 0, "why": "Isolation spread-ah thadukkum - sandbox/VM mattum."},
+    ],
+    "cloud": [
+        {"q": "Cloud-la #1 common security problem?",
+         "opts": ["Misconfiguration (public bucket, over-permissioned IAM)", "Slow CPU",
+                  "Short passwords mattum", "Old monitor"],
+         "a": 0, "why": "Pala cloud breaches-um misconfig-naala than."},
+        {"q": "IAM-ku best practice?",
+         "opts": ["Least privilege", "Ellarukkum admin kudu", "Root key share pannu", "Logging off"],
+         "a": 0, "why": "Minimal permissions = kammi risk."},
+        {"q": "S3 / storage-ah safe panna?",
+         "opts": ["Public access block + encryption", "Speed-ku public aakku", "MFA remove", "CloudTrail delete"],
+         "a": 0, "why": "Public access block, encrypt, log - moonum venum."},
+    ],
+}
+
+# How much XP each activity is worth
+XP_QUIZ_PASS = 25
+XP_STUDY = 8
+QUIZ_PASS_PCT = 0.6   # 60% to pass
+
+
+def has_quiz(did: str) -> bool:
+    return bool(QUIZ.get(did))
+
+
+def quiz_for(did: str) -> list[dict]:
+    return QUIZ.get(did, [])
+
+
+def grade_quiz(did: str, answers: list) -> tuple[str, bool]:
+    """answers = list of selected option strings (or None). Returns (markdown, passed)."""
+    qs = QUIZ.get(did, [])
+    if not qs:
+        return "", False
+    correct = 0
+    lines = []
+    for i, item in enumerate(qs):
+        chosen = answers[i] if i < len(answers) else None
+        right = item["opts"][item["a"]]
+        ok = (chosen == right)
+        if ok:
+            correct += 1
+        mark = "OK" if ok else "X"
+        lines.append(f"**{mark} Q{i+1}.** {item['q']}")
+        if not ok:
+            lines.append(f"   - Un answer: _{chosen or '-'}_")
+            lines.append(f"   - Correct: **{right}**")
+        lines.append(f"   - TIP: {item['why']}")
+        lines.append("")
+    total = len(qs)
+    pct = correct / total if total else 0
+    passed = pct >= QUIZ_PASS_PCT
+    head = f"### {'Pass!' if passed else 'Konjam innum padi'} - {correct}/{total} correct\n"
+    xp_line = ""
+    if passed:
+        msg = progress.award("domains", f"quiz:{did}", XP_QUIZ_PASS)
+        if msg:
+            xp_line = f"\n**{msg}** Badge progress update aachu.\n"
+    return head + xp_line + "\n" + "\n".join(lines), passed
+
+
+def progress_header() -> str:
+    """Compact XP + badge + roadmap line for the lab header."""
+    s = progress.state()
+    xp = s["xp"]
+    badge, _desc = progress.current_badge(xp)
+    nxt_xp, nxt_name = progress.next_badge(xp)
+    if nxt_xp is not None:
+        need = nxt_xp - xp
+        tail = f" - next: **{nxt_name}** ({need} XP mela)"
+    else:
+        tail = " - max badge!"
+    return (f"XP: **{xp}** | Badge: **{badge}** | {s['domains']} activities done{tail}  \n"
+            f"_Quiz pass pannina +{XP_QUIZ_PASS} XP - topic study pannina +{XP_STUDY} XP._")
+
+
+# ---- live AI "actions" per domain ----
+
+_ACTION_SPEC = {
+    "attack": ("Attack walkthrough",
+               "Explain step-by-step how this kind of attack works at a LEARNING/lab level - the stages and "
+               "the idea behind each, and which lab tool maps to each stage. Concept-focused, NOT a copy-paste "
+               "weapon. End with the single biggest defensive takeaway."),
+    "defend": ("Defense playbook",
+               "Give a concrete, prioritised DEFENSE + detection checklist for this domain - what to harden "
+               "first, what logs/signs to watch, and quick wins. This is the most important part."),
+    "lab": ("Build me a mini-lab",
+            "Give a safe, step-by-step mini-lab the learner can do on a LEGAL practice target they own "
+            "(DVWA/Juice Shop/Metasploitable/TryHackMe/HTB/PortSwigger). Include: what to set up, the steps "
+            "in order, what to OBSERVE at each step, and then how to defend what they just saw. Keep it doable."),
+    "challenge": ("Practice challenge",
+                  "Give ONE small hands-on challenge task for a legal practice target, with a clear goal, a "
+                  "starting hint, and the defense lesson they should extract. Encourage them to try before "
+                  "checking the answer."),
+}
+
+
+def action_labels() -> list:
+    return [(spec[0], key) for key, spec in _ACTION_SPEC.items()]
+
+
+def action_prompt(did: str, kind: str) -> list:
+    """Build a defense-first prompt for a one-click lab action."""
+    d = domain_by_id(did)
+    spec = _ACTION_SPEC.get(kind)
+    if not d or not spec:
+        return []
+    _label, task = spec
+    ctx = (f"Topic: {d['name']}. What it is: {d['what_ta']} "
+           f"Attack idea: {d['attack_ta']} Defense idea: {d['defend_ta']} "
+           f"Lab tools: {', '.join(d['tools'])}. Legal practice target: {d['practice']}.")
+    sys = (
+        "You are Nanban India Lab - a hands-on cybersecurity lab coach. "
+        "Reply in Tanglish (Tamil in English letters) + English, NEVER Tamil script. Use short headings, "
+        "numbered steps, and keep it practical and encouraging. "
+        "Everything is strictly for the learner's OWN isolated lab or legal practice platforms "
+        "(TryHackMe, Hack The Box, OWASP, PortSwigger, Metasploitable). Lead with understanding and defense; "
+        "never produce a weaponised, copy-paste exploit aimed at a real third-party system. "
+        f"\n\n{ctx}")
+    return [{"role": "system", "content": sys},
+            {"role": "user", "content": task}]
+
+
+def credit_study(did: str) -> str:
+    """Small XP for actively studying a topic (first time per topic)."""
+    return progress.award("domains", f"study:{did}", XP_STUDY)

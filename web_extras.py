@@ -27,6 +27,56 @@ INIT_JS = r"""
       if (b) setTimeout(() => b.click(), 300);
     }
 
+    // ---------- 🐉 Kali panel: clickable commands + reference height sync ----------
+    if (!window.__kaliUI) {
+      window.__kaliUI = true;
+      // click a command in the Command Reference → drop it into the terminal input
+      document.addEventListener('click', (e) => {
+        const el = e.target.closest('#kali-ref-view code, #kali-ref-view .kali-cmd');
+        if (!el) return;
+        const cmd = (el.getAttribute('data-cmd') || el.textContent || '').trim();
+        if (!cmd) return;
+        const ta = document.querySelector('#kali-in textarea');
+        if (!ta) return;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(ta, cmd);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.focus();
+        try { ta.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e2) {}
+        ta.style.transition = 'box-shadow .2s';
+        ta.style.boxShadow = '0 0 0 3px rgba(214,85,46,.45)';
+        setTimeout(() => { ta.style.boxShadow = ''; }, 450);
+      });
+      // keep the Command Reference exactly as tall as the terminal, with its own scrollbar
+      const syncKaliRef = () => {
+        const term = document.querySelector('#kali-term');
+        const rv = document.querySelector('#kali-ref-view');
+        if (!term || !rv) return;
+        const h = term.getBoundingClientRect().height;
+        if (h > 0) { rv.style.maxHeight = Math.max(220, h - 92) + 'px'; rv.style.overflowY = 'auto'; }
+      };
+      const kaliWatch = setInterval(() => {
+        const term = document.querySelector('#kali-term');
+        if (term) { try { new ResizeObserver(syncKaliRef).observe(term); } catch (e3) {} syncKaliRef(); clearInterval(kaliWatch); }
+      }, 400);
+      window.addEventListener('resize', syncKaliRef);
+      // re-sync when the Kali tab is opened (panel was hidden until then)
+      document.addEventListener('click', (e) => {
+        const tab = e.target.closest('button[role="tab"]');
+        if (tab && /Kali/.test(tab.textContent || '')) setTimeout(syncKaliRef, 200);
+      });
+      // click the dimmed area outside the Connect dialog → close it
+      document.addEventListener('click', (e) => {
+        const modal = document.querySelector('#kali-connect-modal');
+        if (!modal || modal.offsetParent === null) return;   // not visible
+        if (e.target === modal) {
+          const cl = modal.parentElement.querySelector('#kali-modal-close button') ||
+                     document.querySelector('#kali-modal-close button');
+          if (cl) cl.click();
+        }
+      });
+    }
+
     // ---------- PWA: mobile / iPhone home-screen meta (Gradio already serves the manifest) ----------
     const addMeta = (name, content, attr) => {
       attr = attr || 'name';
@@ -88,11 +138,30 @@ INIT_JS = r"""
       + 'display:flex;align-items:center;justify-content:center;color:#fff;'
       + 'background:radial-gradient(circle at 50% 38%, #4fd1ff, #1b6fd6 60%, #0b3a8a);'
       + 'box-shadow:0 6px 22px rgba(11,58,138,.45);';
+    const cmdBtn = mk('⌨️', 'Type a command to Vizhi (works without a mic)');
     const micBtn = mk('🎤', 'Speak once → message box');
     const spkBtn = mk('🔊', 'Read answers aloud (toggle)');
     const thmBtn = mk('🌓', 'Light / dark');
-    bar.append(orb, micBtn, spkBtn, thmBtn);
+    bar.append(orb, cmdBtn, micBtn, spkBtn, thmBtn);
     document.body.appendChild(bar);
+
+    // ---------- Vizhi typed-command box (universal fallback — no mic / any browser) ----------
+    // Lets Vizhi work even where the Web Speech API is missing (Firefox, in-app browsers,
+    // phone over a plain-http LAN address). Same routing as the voice path.
+    const cmdWrap = document.createElement('div');
+    cmdWrap.id = 'nb-cmdbox';
+    cmdWrap.style.cssText = 'position:fixed;right:70px;bottom:118px;z-index:9999;width:min(82vw,300px);'
+      + 'display:none;background:rgba(10,16,32,.96);border:1px solid rgba(110,231,255,.28);'
+      + 'border-radius:14px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);backdrop-filter:blur(6px);';
+    cmdWrap.innerHTML =
+      '<div style="font-size:12px;color:#9fe7ff;margin-bottom:6px">👁️ Vizhi — type a command</div>'
+      + '<input id="nb-cmdin" placeholder="e.g. open India Lab · draw a cat · dark mode"'
+      + ' style="width:100%;box-sizing:border-box;padding:9px 10px;border-radius:9px;border:1px solid rgba(110,231,255,.3);'
+      + 'background:#0b1324;color:#eaf2ff;font-size:13px;outline:none">'
+      + '<div style="font-size:11px;color:#8aa0c8;margin-top:6px;line-height:1.5">'
+      + 'Try: <b style="color:#cfe0ff">open images</b>, <b style="color:#cfe0ff">open kali</b>, '
+      + '<b style="color:#cfe0ff">new chat</b>, <b style="color:#cfe0ff">light mode</b>, or just ask anything.</div>';
+    document.body.appendChild(cmdWrap);
 
     // ---------- first-run welcome card (one time, modern) ----------
     try {
@@ -326,6 +395,26 @@ INIT_JS = r"""
       submitComposer(t);
     };
 
+    // typed-command fallback wiring (works with or without speech support)
+    const cmdIn = document.getElementById('nb-cmdin');
+    const toggleCmd = () => {
+      const open = cmdWrap.style.display === 'block';
+      cmdWrap.style.display = open ? 'none' : 'block';
+      if (!open && cmdIn) cmdIn.focus();
+    };
+    cmdBtn.onclick = toggleCmd;
+    if (cmdIn) {
+      cmdIn.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const v = (cmdIn.value || '').trim();
+          if (!v) return;
+          cmdIn.value = ''; cmdWrap.style.display = 'none';
+          handle(v);
+        } else if (e.key === 'Escape') { cmdWrap.style.display = 'none'; }
+      });
+    }
+
     if (SR) {
       rec = new SR();
       rec.lang = 'en-IN'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
@@ -372,7 +461,10 @@ INIT_JS = r"""
         }
       };
     } else {
-      orb.style.opacity = .5; orb.title = 'Voice not supported in this browser';
+      // No Web Speech API (Firefox, some in-app browsers, phone over plain-http LAN):
+      // the orb opens the typed-command box so Vizhi still works.
+      orb.title = 'Vizhi — voice not supported here, tap to type a command';
+      orb.onclick = toggleCmd;
     }
 
     // ---------- one-shot mic (speech -> composer) ----------

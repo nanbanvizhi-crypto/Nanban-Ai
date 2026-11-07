@@ -448,7 +448,42 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
               js=web_extras.INIT_JS)
 
 
+def _ensure_ai_ready():
+    """Wake the local AI engine (Ollama) before launch so every tab's AI works on
+    first open. No-op when the engine is already up or a hosted backend is used.
+    Best-effort only — never blocks the app from starting."""
+    try:
+        if llm.backend() != "local":
+            return
+        import time
+        import ollama
+        try:
+            ollama.list()           # already awake → nothing to do
+            return
+        except Exception:
+            pass
+        print("⏳ Waking the local AI engine (Ollama)…")
+        try:
+            import doctor
+            doctor._try_start_ollama()
+        except Exception:
+            pass
+        for _ in range(30):         # wait up to ~15s for it to answer
+            time.sleep(0.5)
+            try:
+                ollama.list()
+                print("✅ Local AI engine is ready.")
+                return
+            except Exception:
+                continue
+        print("⚠  Ollama still not responding. Open the Ollama app (llama icon in the "
+              "system tray); AI replies will work once it is running.")
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    _ensure_ai_ready()
     open_browser = "--no-browser" not in sys.argv
     host, auth = "127.0.0.1", None
     if config.LAN_ACCESS:

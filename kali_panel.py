@@ -259,10 +259,18 @@ _KALI_CSS = """<style>
 #kali-wrap, #kali-wrap .gap { gap: 10px !important; }
 #kali-title, #kali-title * { font-size: 1.15rem !important; margin: 0 !important; }
 #kali-status, #kali-status * { font-size: .82rem !important; }
-#kali-main { gap: 12px !important; align-items: stretch !important;
+#kali-head { align-items:center !important; justify-content:space-between !important; flex-wrap:nowrap !important; gap:8px; }
+#kali-head #kali-title { flex:1 1 auto; }
+#kali-connect-toggle { flex:0 0 auto !important; min-height:32px !important; height:32px; border-radius:9px !important;
+  font-size:12.5px !important; font-weight:600 !important; padding:0 14px !important; white-space:nowrap; }
+.kali-ct.on button, #kali-connect-toggle.on { border-color:#27c93f !important; }
+
+#kali-main { gap: 12px !important; align-items: flex-start !important;
   flex-direction: row !important; flex-wrap: nowrap !important; }
-#kali-term-col { flex: 3 1 0 !important; min-width: 0 !important; gap: 10px !important; }
-#kali-ref-col { flex: 1.4 1 0 !important; min-width: 0 !important; gap: 10px !important; }
+#kali-term-col { flex: 3 1 0 !important; min-width: 0 !important; gap: 10px !important;
+  position: sticky; top: 8px; align-self: flex-start; }
+#kali-ref-col { flex: 1.4 1 0 !important; min-width: 0 !important; gap: 10px !important;
+  position: sticky; top: 8px; align-self: flex-start; }
 
 /* terminal window */
 #kali-term { background:#0c0a07 !important; border:1px solid #2a2420 !important; border-radius:14px !important;
@@ -333,9 +341,31 @@ _KALI_CSS = """<style>
 #kali-connect-btns { gap:7px !important; flex-wrap:nowrap !important; }
 #kali-connect-btns .gr-button { flex:1 1 0; min-height:32px !important; height:32px; border-radius:8px !important; }
 #kali-connect-hint, #kali-connect-hint * { font-size:10.5px !important; color:var(--body-text-color-subdued); }
+#kali-ref { padding:0 !important; display:flex !important; flex-direction:column !important; }
 #kali-ref-search { padding:9px 11px 0 !important; }
 #kali-ref-search textarea { font-size:12.5px !important; border-radius:9px !important; }
-#kali-ref-view { padding:4px 13px 13px !important; font-size:12.5px !important; }
+/* the reference scrolls on its own; JS keeps its height equal to the terminal */
+#kali-ref-view { padding:4px 13px 13px !important; font-size:12.5px !important; overflow-y:auto; scrollbar-width:thin; }
+#kali-ref-view::-webkit-scrollbar { width:9px; }
+#kali-ref-view::-webkit-scrollbar-thumb { background:rgba(214,85,46,.35); border-radius:8px; }
+.ref-hint { margin-left:auto; font-size:10px; font-weight:500; color:var(--body-text-color-subdued); white-space:nowrap; }
+/* commands in the reference are clickable → load into the terminal input */
+#kali-ref-view code { cursor:pointer; border:1px solid transparent; border-radius:5px; padding:1px 5px;
+  background:rgba(214,85,46,.10); color:#d6552e; transition:background .12s, border-color .12s; }
+#kali-ref-view code:hover { background:rgba(214,85,46,.22); border-color:rgba(214,85,46,.55); }
+#kali-ref-view code:active { transform:translateY(1px); }
+
+/* Connect Kali — modal dialog (opened from the header icon) */
+#kali-connect-modal { position:fixed !important; top:50%; left:50%; transform:translate(-50%,-50%);
+  z-index:10002 !important; width:min(392px,92vw) !important; max-width:392px !important;
+  border:1px solid var(--border-color-primary) !important; border-radius:16px !important;
+  background:var(--block-background-fill) !important; box-shadow:0 24px 70px rgba(0,0,0,.55) !important;
+  padding:0 !important; overflow:hidden; animation:kali-pop .16s ease; }
+#kali-connect-modal::before { content:''; position:fixed; inset:0; background:rgba(0,0,0,.55);
+  backdrop-filter:blur(2px); z-index:-1; }
+@keyframes kali-pop { from{opacity:0; transform:translate(-50%,-46%) scale(.97)} to{opacity:1; transform:translate(-50%,-50%) scale(1)} }
+#kali-modal-close { margin-top:4px !important; }
+#kali-modal-close button { width:100% !important; }
 
 /* most-powerful arsenal card */
 #kali-power { border:1px solid #d6552e !important; border-radius:13px !important;
@@ -354,8 +384,10 @@ _KALI_CSS = """<style>
 /* responsive — stacks on phones/tablets */
 @media (max-width: 860px) {
   #kali-main { flex-direction:column !important; }
-  #kali-term-col, #kali-ref-col { flex:1 1 100% !important; width:100% !important; }
+  #kali-term-col, #kali-ref-col { flex:1 1 100% !important; width:100% !important;
+    position:static !important; }
   #kali-out textarea { font-size:12px !important; }
+  #kali-ref-view { max-height:420px !important; }
 }
 </style>"""
 
@@ -363,9 +395,30 @@ _KALI_CSS = """<style>
 def build() -> None:
     with gr.Column(elem_id="kali-wrap"):
         gr.HTML(_KALI_CSS)
+        _is_on = connected()
         with gr.Row(elem_id="kali-head"):
             gr.Markdown("### 🐉 Kali Linux — terminal + AI, together", elem_id="kali-title")
+            connect_toggle = gr.Button(
+                "🟢 Kali connected" if _is_on else "🔌 Connect Kali",
+                size="sm", elem_id="kali-connect-toggle",
+                elem_classes=["kali-ct", "on"] if _is_on else ["kali-ct"])
         status = gr.Markdown(status_line(), elem_id="kali-status")
+
+        # ---- Connect Kali — modal dialog (opened from the header button) ----
+        with gr.Group(visible=False, elem_id="kali-connect-modal") as connect_modal:
+            gr.HTML('<div class="ref-head"><span class="ref-ico">🔌</span>'
+                    '<span>Connect Kali</span></div>', elem_id="kali-connect-title")
+            with gr.Column(elem_id="kali-connect-body"):
+                k_user = gr.Textbox(show_label=False, container=False,
+                                    placeholder="Kali username (e.g. nanbanlinux)", elem_id="kali-user")
+                k_pass = gr.Textbox(show_label=False, container=False, type="password",
+                                    placeholder="Password", elem_id="kali-pass")
+                with gr.Row(elem_id="kali-connect-btns"):
+                    connect_btn = gr.Button("🔌 Connect", variant="primary", size="sm")
+                    recheck_btn = gr.Button("↻ Re-check", variant="secondary", size="sm")
+                close_btn = gr.Button("✕ Close", variant="secondary", size="sm", elem_id="kali-modal-close")
+                gr.Markdown("Install Kali in the 🛡️ **Security** tab → `sudo service ssh start` → connect.",
+                            elem_id="kali-connect-hint")
 
         with gr.Row(equal_height=False, elem_id="kali-main"):
             # ---- left: terminal (bigger) + AI ----
@@ -399,29 +452,19 @@ def build() -> None:
                         ai_btn = gr.Button("⚡ Run", variant="primary", scale=1, size="sm")
                     ai_auto = gr.Checkbox(value=True, label="⚡ Auto-run on safe/lab targets", container=False)
 
-            # ---- right: compact connect + command dictionary ----
+            # ---- right: command dictionary (same height as the terminal, scrollable) ----
             with gr.Column(scale=2, elem_id="kali-ref-col"):
-                with gr.Group(elem_id="kali-connect"):
-                    gr.HTML('<div class="ref-head"><span class="ref-ico">🔌</span>'
-                            '<span>Connect Kali</span></div>', elem_id="kali-connect-title")
-                    with gr.Column(elem_id="kali-connect-body"):
-                        k_user = gr.Textbox(show_label=False, container=False, placeholder="Kali username (e.g. nanban)",
-                                            elem_id="kali-user")
-                        k_pass = gr.Textbox(show_label=False, container=False, type="password",
-                                            placeholder="Password (optional)", elem_id="kali-pass")
-                        with gr.Row(elem_id="kali-connect-btns"):
-                            connect_btn = gr.Button("🔌 Connect", variant="primary", size="sm")
-                            recheck_btn = gr.Button("↻ Re-check", variant="secondary", size="sm")
-                        gr.Markdown("Install Kali in the 🛡️ **Security** tab → `sudo service ssh start` → connect.",
-                                    elem_id="kali-connect-hint")
                 with gr.Group(elem_id="kali-ref"):
                     gr.HTML('<div class="ref-head"><span class="ref-ico">📖</span>'
-                            '<span>Command Reference</span></div>', elem_id="kali-ref-title")
+                            '<span>Command Reference</span>'
+                            '<span class="ref-hint">👆 tap a command to load it</span></div>',
+                            elem_id="kali-ref-title")
                     ref_search = gr.Textbox(placeholder="🔍  Look up a tool…  (nmap, sql, wifi, metasploit)",
                                             show_label=False, container=False, elem_id="kali-ref-search")
                     ref_view = gr.Markdown(
                         "_Every command you run is explained here automatically — in English and Tanglish. "
-                        "Or search any tool above._", elem_id="kali-ref-view")
+                        "Or search any tool above. **Tap any command to drop it into the terminal.**_",
+                        elem_id="kali-ref-view")
 
         # ---- Toolset installer ----
         import kali_installer
@@ -438,9 +481,18 @@ def build() -> None:
             gr.HTML(kali_installer.installer_html())
 
         # ---- wiring ----
+        def _toggle_update():
+            on = connected()
+            return gr.update(value="🟢 Kali connected" if on else "🔌 Connect Kali",
+                             elem_classes=["kali-ct", "on"] if on else ["kali-ct"])
+
+        connect_toggle.click(lambda: gr.update(visible=True), None, connect_modal)
+        close_btn.click(lambda: gr.update(visible=False), None, connect_modal)
         connect_btn.click(connect_kali, [k_user, k_pass], status).then(
-            lambda: gr.update(value=KALI if connected() else "local"), None, target)
-        recheck_btn.click(status_line, None, status)
+            lambda: gr.update(value=KALI if connected() else "local"), None, target).then(
+            _toggle_update, None, connect_toggle).then(
+            lambda: gr.update(visible=not connected()), None, connect_modal)
+        recheck_btn.click(status_line, None, status).then(_toggle_update, None, connect_toggle)
         term_in.submit(run, [term_in, target], [term_out, ref_view]).then(lambda: "", None, term_in)
         ai_btn.click(ai_shell, [ai_in, ai_auto, target], [term_in, term_out, ref_view]).then(
             lambda: "", None, ai_in)

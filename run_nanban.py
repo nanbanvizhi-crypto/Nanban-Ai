@@ -67,6 +67,75 @@ def wait_for_port(p: int, timeout: float = 90) -> bool:
     return False
 
 
+def _port_busy(p: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", p), timeout=0.6):
+            return True
+    except OSError:
+        return False
+
+
+def _pids_on_port(p: int) -> set:
+    """PIDs LISTENING on port p (best-effort, per OS)."""
+    pids = set()
+    try:
+        if IS_WINDOWS:
+            out = subprocess.run(["netstat", "-ano", "-p", "tcp"],
+                                 capture_output=True, text=True, timeout=10).stdout
+            for ln in out.splitlines():
+                if f":{p} " in ln and "LISTEN" in ln.upper():
+                    pids.add(ln.split()[-1])
+        else:
+            out = subprocess.run(["lsof", "-ti", f"tcp:{p}", "-sTCP:LISTEN"],
+                                 capture_output=True, text=True, timeout=10).stdout
+            pids.update(x.strip() for x in out.split() if x.strip())
+    except Exception:
+        pass
+    return pids
+
+
+def _is_python(pid: str) -> bool:
+    try:
+        if IS_WINDOWS:
+            out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                 capture_output=True, text=True, timeout=10).stdout
+        else:
+            out = subprocess.run(["ps", "-p", str(pid), "-o", "comm="],
+                                 capture_output=True, text=True, timeout=10).stdout
+        return "python" in out.lower()
+    except Exception:
+        return False
+
+
+def _kill(pid: str) -> None:
+    try:
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(pid), "/F", "/T"],
+                           capture_output=True, timeout=10)
+        else:
+            os.kill(int(pid), 15)
+    except Exception:
+        pass
+
+
+def free_stale_instance(p: int) -> None:
+    """A previous Nanban still holding the port means a re-launch would serve the OLD
+    code (or fail to bind). Stop that stale instance so THIS launch — with the latest
+    code — takes over. Only ever targets a python process listening on our own port."""
+    if not _port_busy(p):
+        return
+    line(f"   • Previous Nanban still running on port {p} — replacing it with the latest version…")
+    me = os.getpid()
+    for pid in _pids_on_port(p):
+        if pid and pid.isdigit() and int(pid) != me and _is_python(pid):
+            _kill(pid)
+    for _ in range(24):          # wait up to ~12s for the port to release
+        if not _port_busy(p):
+            return
+        time.sleep(0.5)
+    line(f"   • Port {p} is still busy. Close any other Nanban window, then run this again.")
+
+
 # ---------------------------------------------------------------- the pieces
 
 def start_lab_background() -> None:
@@ -132,6 +201,10 @@ def main() -> None:
     line("  ╚══════════════════════════════════════════╝")
     line("")
 
+    # 0. If an older Nanban is still holding the port, replace it so this run serves
+    #    the latest code (otherwise the browser keeps showing the old version).
+    free_stale_instance(p)
+
     # 1. Lab + Kali, in the background (never block the app coming up)
     start_lab_background()
     connect_kali_background()
@@ -154,6 +227,10 @@ def main() -> None:
     else:
         import app                           # plain local web app
         import ui_theme
+        try:
+            app._ensure_ai_ready()           # wake the local AI engine so every tab's AI works
+        except Exception:
+            pass
         app.demo.queue().launch(
             inbrowser=False, server_name="127.0.0.1", server_port=p,
             theme=ui_theme.theme(), css=app.CSS, footer_links=[], pwa=True,
