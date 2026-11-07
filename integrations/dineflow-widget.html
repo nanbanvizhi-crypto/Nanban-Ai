@@ -1,0 +1,73 @@
+<!doctype html>
+<!--
+  🍽️ Nanban AI widget for DineFlow (ready to paste)
+
+  1. In Nanban: config.py -> add USERS and an API key in API_KEYS, run start_server.bat.
+  2. Set NANBAN_URL and NANBAN_KEY below to your Nanban server.
+  3. Drop this file into DineFlow, or copy the <style>+<div>+<script> into a DineFlow page.
+     (Plain JS — works in any site. A React version is in README-DineFlow.md.)
+-->
+<meta charset="utf-8">
+<title>DineFlow · AI</title>
+<style>
+  :root { --df: #c56a44; }
+  #nb-ai { position: fixed; right: 20px; bottom: 20px; width: 360px; max-width: 92vw;
+    font-family: system-ui, sans-serif; z-index: 9999; }
+  #nb-box { background: #fff; border: 1px solid #e7dccf; border-radius: 16px; overflow: hidden;
+    box-shadow: 0 16px 50px rgba(40,24,8,.18); display: none; }
+  #nb-box.open { display: block; }
+  #nb-head { background: var(--df); color: #fff; padding: 12px 14px; font-weight: 700; }
+  #nb-log { height: 320px; overflow-y: auto; padding: 12px; font-size: 14px; background: #faf8f4; }
+  .nb-msg { margin: 6px 0; line-height: 1.5; }
+  .nb-u { text-align: right; } .nb-u span { background: #f0e4d7; padding: 8px 12px; border-radius: 14px; display: inline-block; }
+  .nb-a span { background: #fff; border: 1px solid #eadfd3; padding: 8px 12px; border-radius: 14px; display: inline-block; }
+  #nb-in { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #eadfd3; }
+  #nb-in input { flex: 1; border: 1px solid #e7dccf; border-radius: 10px; padding: 9px 12px; font-size: 14px; }
+  #nb-in button { background: var(--df); color: #fff; border: 0; border-radius: 10px; padding: 0 16px; font-weight: 700; cursor: pointer; }
+  #nb-fab { background: var(--df); color: #fff; border: 0; border-radius: 999px; padding: 12px 18px;
+    font-weight: 700; cursor: pointer; box-shadow: 0 8px 24px rgba(40,24,8,.25); float: right; }
+</style>
+
+<div id="nb-ai">
+  <div id="nb-box">
+    <div id="nb-head">🍽️ DineFlow Assistant</div>
+    <div id="nb-log"></div>
+    <div id="nb-in"><input id="nb-q" placeholder="Ask about sales, menu, bookings…"><button onclick="nbSend()">Send</button></div>
+  </div>
+  <button id="nb-fab" onclick="document.getElementById('nb-box').classList.toggle('open')">💬 AI</button>
+</div>
+
+<script>
+  // ---- configure these two ----
+  const NANBAN_URL = "http://127.0.0.1:8000";     // your Nanban server (or cloud URL)
+  const NANBAN_KEY = "nanban-sk-REPLACE-ME";      // from config.py API_KEYS
+  const SESSION = "dineflow-" + (localStorage.getItem("nb_sid") || (localStorage.setItem("nb_sid", Date.now()), localStorage.getItem("nb_sid")));
+
+  function nbAdd(role, text) {
+    const log = document.getElementById("nb-log");
+    const d = document.createElement("div");
+    d.className = "nb-msg " + (role === "user" ? "nb-u" : "nb-a");
+    d.innerHTML = "<span></span>"; d.firstChild.textContent = text;
+    log.appendChild(d); log.scrollTop = log.scrollHeight;
+    return d.firstChild;
+  }
+
+  async function nbSend() {
+    const inp = document.getElementById("nb-q");
+    const q = inp.value.trim(); if (!q) return;
+    inp.value = ""; nbAdd("user", q);
+    const out = nbAdd("assistant", "…");
+    try {
+      const r = await fetch(NANBAN_URL + "/api/agent", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + NANBAN_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ message: q, mode: "assistant", session_id: SESSION })
+      });
+      const data = await r.json();
+      out.textContent = data.reply || data.error || "(no reply)";
+    } catch (e) {
+      out.textContent = "⚠️ Can't reach Nanban. Is the server running and the URL/key correct?";
+    }
+  }
+  document.getElementById("nb-q").addEventListener("keydown", e => { if (e.key === "Enter") nbSend(); });
+</script>

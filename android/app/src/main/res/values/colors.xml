@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nanban_bg">#f7f4ef</color>
+    <color name="nanban_accent">#c56a44</color>
+</resources>

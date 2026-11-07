@@ -1,0 +1,21 @@
+# Run Nanban on a VPS (Hetzner / DigitalOcean / any Docker host):
+#   1. copy .env.example -> .env and fill it in
+#   2. docker compose -f cloud/docker-compose.yml up -d
+# Then open  http://<server-ip>:8000  (put a domain + HTTPS in front for production).
+services:
+  nanban:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    image: nanban
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - nanban-data:/app/data
+      - nanban-docs:/app/documents
+    restart: unless-stopped
+
+volumes:
+  nanban-data:
+  nanban-docs:

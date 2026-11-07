@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Nanban runtime data (user-specific, never commit)
+data/
+workspace/
+documents/*
+!documents/.gitkeep
+security/lab/.data/
+
+# Secrets — NEVER commit these
+.env
+*.key
+*.pem
+config_local.py
+
+# Build output
+build/
+dist/
+*.spec
+Nanban.exe
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+phone_qr.png

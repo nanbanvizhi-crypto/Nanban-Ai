@@ -1,0 +1,89 @@
+# Nanban Security Lab — a safe, legal practice range on your own computer.
+#
+# Every target here is INTENTIONALLY vulnerable and MADE FOR learning. They are
+# bound to 127.0.0.1 (localhost) only, so nothing is exposed to your network or
+# the internet. You attack these, and only these. See ../README.md for the rules.
+#
+# Start:  docker compose up -d      (or double-click start_lab.bat / ./start_lab.sh)
+# Stop:   docker compose down
+#
+# Targets after it starts (all localhost-only):
+#   DVWA (Damn Vulnerable Web App)   http://127.0.0.1:8080   login: admin / password
+#   OWASP Juice Shop                 http://127.0.0.1:3000
+#   OWASP WebGoat (lessons)          http://127.0.0.1:8081/WebGoat
+#   OWASP Mutillidae II              http://127.0.0.1:8082
+#   bWAPP (buggy web app)            http://127.0.0.1:8083/install.php (install first)
+#   VAmPI (vulnerable REST API)      http://127.0.0.1:5001
+#   Vulnerable GraphQL (DVGA)        http://127.0.0.1:5013
+#
+# Tip: you don't need all of them at once. To run just a few, use:
+#   docker compose up -d dvwa juiceshop
+# To run everything: docker compose up -d
+
+services:
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: nanban_dvwa
+    ports:
+      - "127.0.0.1:8080:80"      # only reachable from THIS computer
+    restart: unless-stopped
+
+  juiceshop:
+    image: bkimminich/juice-shop:latest
+    container_name: nanban_juiceshop
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+  webgoat:
+    image: webgoat/webgoat:latest
+    container_name: nanban_webgoat
+    ports:
+      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:9090:9090"
+    environment:
+      - WEBGOAT_HOST=127.0.0.1
+      - WEBWOLF_HOST=127.0.0.1
+    restart: unless-stopped
+
+  mutillidae:
+    # OWASP Mutillidae II — dozens of web vulns with built-in hints. Great for OWASP Top 10 drilling.
+    image: citizenstig/nowasp:latest
+    container_name: nanban_mutillidae
+    ports:
+      - "127.0.0.1:8082:80"
+    restart: unless-stopped
+
+  bwapp:
+    # bWAPP — 100+ web vulnerabilities. After it starts, open /install.php once to set up the DB.
+    image: raesene/bwapp:latest
+    container_name: nanban_bwapp
+    ports:
+      - "127.0.0.1:8083:80"
+    restart: unless-stopped
+
+  vampi:
+    # VAmPI — a deliberately vulnerable REST API, for learning API security (OWASP API Top 10).
+    image: erev0s/vampi:latest
+    container_name: nanban_vampi
+    ports:
+      - "127.0.0.1:5001:5000"
+    restart: unless-stopped
+
+  dvga:
+    # Damn Vulnerable GraphQL Application — for learning GraphQL-specific attacks.
+    image: dolevf/dvga:latest
+    container_name: nanban_dvga
+    ports:
+      - "127.0.0.1:5013:5013"
+    environment:
+      - WEB_HOST=0.0.0.0
+    restart: unless-stopped
+
+# All images are intentionally-vulnerable, made-for-learning apps, bound to 127.0.0.1 only.
+# They are large (several GB total) and download once on first start. Run only what you need.
+#
+# For bigger targets that don't fit Docker well, run them as your own VMs (legal, you own them):
+#   • Metasploitable 2/3 — a whole vulnerable Linux box (network + service + privesc practice)
+#   • GOAD — a full vulnerable Active Directory lab (see curriculum/08-active-directory.md)
+#   • VulnHub — hundreds of free vulnerable VM images

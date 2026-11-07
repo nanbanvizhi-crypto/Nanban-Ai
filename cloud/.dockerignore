@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+data/*
+documents/*
+workspace/*
+!data/.gitkeep
+!documents/.gitkeep
+.git/
+*.zip
+deploy/
+build/
+dist/
