@@ -43,6 +43,29 @@ KALI_SYS = (
 
 # ---------------------------------------------------------------- connection
 
+def _known_kali_user() -> str:
+    """Best guess for the Kali username, to prefill the connect form.
+    Prefers the one already saved; otherwise asks WSL for its default user."""
+    try:
+        import json
+        reg = json.loads((config.DATA_DIR / "servers.json").read_text("utf-8"))
+        u = (reg.get(KALI, {}).get("user") or "").strip()
+        if u:
+            return u
+    except Exception:
+        pass
+    try:
+        import subprocess
+        out = subprocess.run(["wsl.exe", "-d", "kali-linux", "--", "id", "-un"],
+                             capture_output=True, text=True, timeout=12)
+        name = (out.stdout or "").strip()
+        if name and name != "root":
+            return name
+    except Exception:
+        pass
+    return ""
+
+
 def connected() -> bool:
     if KALI not in servers.names():
         return False
@@ -355,13 +378,14 @@ _KALI_CSS = """<style>
 #kali-ref-view code:hover { background:rgba(214,85,46,.22); border-color:rgba(214,85,46,.55); }
 #kali-ref-view code:active { transform:translateY(1px); }
 
-/* Connect Kali — modal dialog (opened from the header icon) */
-#kali-connect-modal { position:fixed !important; top:50%; left:50%; transform:translate(-50%,-50%);
-  z-index:10002 !important; width:min(392px,92vw) !important; max-width:392px !important;
+/* Connect Kali — modal dialog (hidden until the header button adds .kopen) */
+#kali-connect-modal { display:none !important; }
+#kali-connect-modal.kopen { display:block !important; position:fixed !important; top:50%; left:50%;
+  transform:translate(-50%,-50%); z-index:10002 !important; width:min(392px,92vw) !important; max-width:392px !important;
   border:1px solid var(--border-color-primary) !important; border-radius:16px !important;
   background:var(--block-background-fill) !important; box-shadow:0 24px 70px rgba(0,0,0,.55) !important;
-  padding:0 !important; overflow:hidden; animation:kali-pop .16s ease; }
-#kali-connect-modal::before { content:''; position:fixed; inset:0; background:rgba(0,0,0,.55);
+  padding:0 !important; overflow:visible; animation:kali-pop .16s ease; }
+#kali-connect-modal.kopen::before { content:''; position:fixed; inset:0; background:rgba(0,0,0,.55);
   backdrop-filter:blur(2px); z-index:-1; }
 @keyframes kali-pop { from{opacity:0; transform:translate(-50%,-46%) scale(.97)} to{opacity:1; transform:translate(-50%,-50%) scale(1)} }
 #kali-modal-close { margin-top:4px !important; }
@@ -405,11 +429,11 @@ def build() -> None:
         status = gr.Markdown(status_line(), elem_id="kali-status")
 
         # ---- Connect Kali — modal dialog (opened from the header button) ----
-        with gr.Group(visible=False, elem_id="kali-connect-modal") as connect_modal:
+        with gr.Group(elem_id="kali-connect-modal") as connect_modal:
             gr.HTML('<div class="ref-head"><span class="ref-ico">🔌</span>'
                     '<span>Connect Kali</span></div>', elem_id="kali-connect-title")
             with gr.Column(elem_id="kali-connect-body"):
-                k_user = gr.Textbox(show_label=False, container=False,
+                k_user = gr.Textbox(show_label=False, container=False, value=_known_kali_user(),
                                     placeholder="Kali username (e.g. nanbanlinux)", elem_id="kali-user")
                 k_pass = gr.Textbox(show_label=False, container=False, type="password",
                                     placeholder="Password", elem_id="kali-pass")
@@ -486,12 +510,12 @@ def build() -> None:
             return gr.update(value="🟢 Kali connected" if on else "🔌 Connect Kali",
                              elem_classes=["kali-ct", "on"] if on else ["kali-ct"])
 
-        connect_toggle.click(lambda: gr.update(visible=True), None, connect_modal)
-        close_btn.click(lambda: gr.update(visible=False), None, connect_modal)
+        # Opening/closing the dialog is done in the browser (INIT_JS) via a CSS class —
+        # instant, and it can't miss. The buttons below only do the actual work.
+        _close_js = "() => { const m = document.querySelector('#kali-connect-modal'); if (m) m.classList.remove('kopen'); }"
         connect_btn.click(connect_kali, [k_user, k_pass], status).then(
             lambda: gr.update(value=KALI if connected() else "local"), None, target).then(
-            _toggle_update, None, connect_toggle).then(
-            lambda: gr.update(visible=not connected()), None, connect_modal)
+            _toggle_update, None, connect_toggle).then(None, None, None, js=_close_js)
         recheck_btn.click(status_line, None, status).then(_toggle_update, None, connect_toggle)
         term_in.submit(run, [term_in, target], [term_out, ref_view]).then(lambda: "", None, term_in)
         ai_btn.click(ai_shell, [ai_in, ai_auto, target], [term_in, term_out, ref_view]).then(

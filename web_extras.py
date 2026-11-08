@@ -65,14 +65,28 @@ INIT_JS = r"""
         const tab = e.target.closest('button[role="tab"]');
         if (tab && /Kali/.test(tab.textContent || '')) setTimeout(syncKaliRef, 200);
       });
-      // click the dimmed area outside the Connect dialog → close it
+      // open the Connect dialog from the header button (instant, class-based)
       document.addEventListener('click', (e) => {
-        const modal = document.querySelector('#kali-connect-modal');
-        if (!modal || modal.offsetParent === null) return;   // not visible
-        if (e.target === modal) {
-          const cl = modal.parentElement.querySelector('#kali-modal-close button') ||
-                     document.querySelector('#kali-modal-close button');
-          if (cl) cl.click();
+        if (e.target.closest('#kali-connect-toggle')) {
+          const m = document.querySelector('#kali-connect-modal');
+          if (m) {
+            m.classList.add('kopen');
+            const u = m.querySelector('#kali-user textarea, #kali-user input');
+            if (u) setTimeout(() => u.focus(), 60);
+          }
+        }
+      });
+      // close on the ✕ button or when clicking the dimmed backdrop
+      document.addEventListener('click', (e) => {
+        const m = document.querySelector('#kali-connect-modal');
+        if (!m || !m.classList.contains('kopen')) return;
+        if (e.target === m || e.target.closest('#kali-modal-close')) m.classList.remove('kopen');
+      });
+      // Esc also closes the dialog
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          const m = document.querySelector('#kali-connect-modal');
+          if (m) m.classList.remove('kopen');
         }
       });
     }
