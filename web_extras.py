@@ -91,6 +91,35 @@ INIT_JS = r"""
       });
     }
 
+    // ---------- 👁 show / hide the hosted API-key field ----------
+    if (!window.__nbKeyEye) {
+      window.__nbKeyEye = true;
+      const addEye = () => {
+        const wrap = document.querySelector('#nb-hosted-key');
+        if (!wrap || wrap.querySelector('.nb-eye')) return;
+        const inp = wrap.querySelector('input');
+        if (!inp) return;
+        wrap.style.position = 'relative';
+        inp.style.paddingRight = '36px';
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'nb-eye'; b.textContent = '👁';
+        b.title = 'Show / hide key';
+        b.style.cssText = 'position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:5;'
+          + 'background:transparent;border:none;cursor:pointer;font-size:16px;opacity:.6;padding:2px;line-height:1;';
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          const i = wrap.querySelector('input'); if (!i) return;
+          const show = i.type === 'password';
+          i.type = show ? 'text' : 'password';
+          b.style.opacity = show ? '1' : '.6';
+        });
+        wrap.appendChild(b);
+      };
+      addEye();
+      // the Admin tab renders lazily — re-check after clicks (e.g. opening Admin)
+      document.addEventListener('click', () => setTimeout(addEye, 200));
+    }
+
     // ---------- PWA: mobile / iPhone home-screen meta (Gradio already serves the manifest) ----------
     const addMeta = (name, content, attr) => {
       attr = attr || 'name';

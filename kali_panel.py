@@ -43,17 +43,27 @@ KALI_SYS = (
 
 # ---------------------------------------------------------------- connection
 
-def _known_kali_user() -> str:
-    """Best guess for the Kali username, to prefill the connect form.
-    Prefers the one already saved; otherwise asks WSL for its default user."""
+def _saved_kali() -> dict:
+    """The saved Kali server entry (user/password), if any."""
     try:
         import json
         reg = json.loads((config.DATA_DIR / "servers.json").read_text("utf-8"))
-        u = (reg.get(KALI, {}).get("user") or "").strip()
-        if u:
-            return u
+        return reg.get(KALI, {}) or {}
     except Exception:
-        pass
+        return {}
+
+
+def _known_kali_pass() -> str:
+    """Saved Kali password, to prefill the connect form (local convenience)."""
+    return (_saved_kali().get("password") or "")
+
+
+def _known_kali_user() -> str:
+    """Best guess for the Kali username, to prefill the connect form.
+    Prefers the one already saved; otherwise asks WSL for its default user."""
+    u = (_saved_kali().get("user") or "").strip()
+    if u:
+        return u
     try:
         import subprocess
         out = subprocess.run(["wsl.exe", "-d", "kali-linux", "--", "id", "-un"],
@@ -91,7 +101,8 @@ def connect_kali(username: str, password: str) -> str:
     username = (username or "").strip()
     if not username:
         return "⚠️ Type your Kali username first (the one you created during setup)."
-    servers.add(KALI, f"{username}@127.0.0.1", password=password or "", save_password=False)
+    # Save the password so the local Kali login stays one-click (data/servers.json is gitignored).
+    servers.add(KALI, f"{username}@127.0.0.1", password=password or "", save_password=bool(password))
     try:
         servers.disconnect(KALI)
         host = servers.connect(KALI, ask_password=lambda n: password or "")
@@ -107,38 +118,72 @@ def _blocked(command: str) -> bool:
     return any(re.search(p, command, re.IGNORECASE) for p in HARD_BLOCK)
 
 
+# The interactive shell is a real terminal, so its output carries ANSI colour codes,
+# cursor moves and \r spinners. Clean them so the plain text box stays readable.
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-9;?]*[ -/]*[@-~]"       # CSI … colour / cursor
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC … title
+    r"|\x1b[=>]|\x1b[()][A-Za-z0-9]")     # misc two/three-char escapes
+
+
+def _clean_term(text: str) -> str:
+    text = _ANSI_RE.sub("", text).replace("\x1b", "")
+    out = []
+    for line in text.split("\n"):
+        line = line.rstrip("\r")            # normal CRLF ending — just drop the trailing CR
+        if "\r" in line:                    # a spinner / readline redraw overwrites in place:
+            parts = [p for p in line.split("\r") if p]  # keep the final non-empty state
+            line = parts[-1] if parts else ""
+        # drop other control chars but keep tab
+        line = "".join(ch for ch in line if ch == "\t" or ord(ch) >= 32)
+        out.append(line)
+    return "\n".join(out)
+
+
+# One continuous terminal transcript (single-user local app), like a real terminal window.
+_TERM = {"text": ""}
+_TERM_CAP = 60000                           # keep the last ~60k chars
+
+
+def _term_append(chunk: str) -> str:
+    _TERM["text"] = (_TERM["text"] + chunk)[-_TERM_CAP:]
+    return _TERM["text"]
+
+
 def run_on_kali(command: str):
-    """Stream output from a command executed on the Kali box over SSH."""
-    command = (command or "").strip()
-    if not command:
-        yield ""
-        return
+    """Send a line to the persistent Kali shell and stream back the live output.
+    Because the shell stays open, interactive tools (msfconsole, python, mysql…) keep
+    running and your next lines go into them — and cd/env persist between commands."""
+    command = (command or "").rstrip("\n")
     if _blocked(command):
-        yield "⚠ Blocked: this looks like it could wipe the disk or crash the box. Not run."
+        yield _term_append(f"\n⚠ Blocked: idhu disk wipe / crash maari dangerous. Run pannala.\n")
         return
     try:
         host = servers.connect(KALI)
     except Exception as e:
-        yield f"🟠 Kali not reachable: {e}\nStart SSH in Kali (`sudo service ssh start`) and reconnect."
+        yield (f"🟠 Kali not reachable: {e}\nStart SSH in Kali (`sudo service ssh start`) and reconnect.")
         return
-    lines: list[str] = []
-    result: dict = {}
+    # first use: show the shell's banner / prompt
+    banner = host.ensure_shell()
+    if banner:
+        yield _term_append(_clean_term(banner))
+    host.shell_send(command)
+    for chunk in host.shell_stream(idle=0.5, max_wait=config.COMMAND_TIMEOUT):
+        yield _term_append(_clean_term(chunk))
+    yield _TERM["text"]
 
-    def worker():
-        r = host.run(command, timeout=config.COMMAND_TIMEOUT, on_line=lines.append)
-        result["code"] = r.code
 
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    shown = 0
-    while t.is_alive():
-        if len(lines) != shown:
-            shown = len(lines)
-            yield "\n".join(lines)
-        time.sleep(0.12)
-    t.join()
-    code = result.get("code", 0)
-    yield "\n".join(lines) + f"\n\n[exit code {code}]  ·  {host.display_cwd()}"
+def kali_interrupt():
+    """Ctrl-C the running tool in the Kali shell, then show fresh output."""
+    try:
+        host = servers.connect(KALI)
+    except Exception as e:
+        yield f"🟠 Kali not reachable: {e}"
+        return
+    host.shell_interrupt()
+    for chunk in host.shell_stream(idle=0.4, max_wait=10):
+        yield _term_append(_clean_term(chunk))
+    yield _TERM["text"]
 
 
 def run(command: str, target: str):
@@ -238,9 +283,11 @@ def ai_shell(prompt: str, auto_run: bool, target: str):
                     "illa terminal la 🖥️ **This PC** select pannu."), ref
         return
     # safe + auto-run
-    yield cmd, f"$ {cmd}\n⏳ Running on {'Kali' if target == KALI else 'this PC'}…", ref
+    yield cmd, f"⏳ Running on {'Kali' if target == KALI else 'this PC'}…  ({cmd})", ref
     for out, r in run(cmd, target):
-        yield cmd, f"$ {cmd}\n{out}", r
+        # Kali's interactive shell already echoes the command in its transcript; the local
+        # runner does not, so prefix only there.
+        yield cmd, (out if target == KALI else f"$ {cmd}\n{out}"), r
 
 
 def reference_for(command: str) -> str:
@@ -282,6 +329,28 @@ _KALI_CSS = """<style>
 #kali-wrap, #kali-wrap .gap { gap: 10px !important; }
 #kali-title, #kali-title * { font-size: 1.15rem !important; margin: 0 !important; }
 #kali-status, #kali-status * { font-size: .82rem !important; }
+/* 🖥️ Kali Desktop launcher */
+#kali-desk { border:1px solid rgba(43,212,189,.45) !important; border-radius:14px !important; padding:12px 16px !important;
+  background:linear-gradient(135deg, #0e1a22 0%, #0b1118 60%, #12222a 100%) !important; margin-bottom:10px !important;
+  color:#e3edf6 !important; box-shadow:0 6px 24px rgba(0,0,0,.25); }
+#kali-desk * { color:#e3edf6; }
+#kali-desk-bar { align-items:center !important; justify-content:space-between !important; flex-wrap:nowrap !important; gap:12px;
+  background:transparent !important; border:none !important; }
+#kali-desk-txt { flex:1 1 auto; background:transparent !important; }
+.kd-txt { display:flex; align-items:center; gap:14px; }
+.kd-ico { font-size:32px; line-height:1; }
+.kd-title { font-weight:800; font-size:15px; color:#ffffff; letter-spacing:.1px; }
+.kd-sub { font-size:12.5px; color:#9fb3c4; margin-top:3px; }
+#kali-desk-btn { flex:0 0 auto !important; min-height:40px !important; border-radius:10px !important; font-weight:800 !important;
+  padding:0 20px !important; white-space:nowrap; background:#2bd4bd !important; color:#06211e !important; border:none !important;
+  box-shadow:0 4px 16px rgba(43,212,189,.35); }
+#kali-desk-btn:hover { background:#3fe3cc !important; }
+#kali-desk-status { font-size:12.5px; margin-top:8px; background:transparent !important; }
+#kali-desk-status p { margin:0; color:#cfe3dd; }
+#kali-desk-status a { color:#2bd4bd !important; font-weight:700; }
+#kali-desk-url { display:none !important; }
+@media (max-width:720px) { #kali-desk-bar { flex-wrap:wrap !important; } .kd-sub { display:none; } }
+
 #kali-head { align-items:center !important; justify-content:space-between !important; flex-wrap:nowrap !important; gap:8px; }
 #kali-head #kali-title { flex:1 1 auto; }
 #kali-connect-toggle { flex:0 0 auto !important; min-height:32px !important; height:32px; border-radius:9px !important;
@@ -290,10 +359,17 @@ _KALI_CSS = """<style>
 
 #kali-main { gap: 12px !important; align-items: flex-start !important;
   flex-direction: row !important; flex-wrap: nowrap !important; }
+/* both panels ≈ full screen height: 5% gap at top, 5% gap at bottom */
 #kali-term-col { flex: 3 1 0 !important; min-width: 0 !important; gap: 10px !important;
-  position: sticky; top: 8px; align-self: flex-start; }
+  position: sticky; top: 5vh; align-self: flex-start; }
 #kali-ref-col { flex: 1.4 1 0 !important; min-width: 0 !important; gap: 10px !important;
-  position: sticky; top: 8px; align-self: flex-start; }
+  position: sticky; top: 5vh; align-self: flex-start; }
+/* the terminal output grows tall; the Run box stays right under it (no floating gap) */
+#kali-out textarea { height: calc(90vh - 220px) !important; min-height: 240px !important;
+  max-height: none !important; resize: none !important; }
+/* the Command Reference matches that height and scrolls inside */
+#kali-ref-view { height: calc(90vh - 112px) !important; min-height: 240px !important;
+  max-height: none !important; overflow-y: auto !important; }
 
 /* terminal window */
 #kali-term { background:#0c0a07 !important; border:1px solid #2a2420 !important; border-radius:14px !important;
@@ -301,7 +377,11 @@ _KALI_CSS = """<style>
 #kali-term-head { align-items:center !important; justify-content:space-between !important; padding:8px 12px !important;
   background:#161210 !important; border-bottom:1px solid #2a2420; gap:8px; }
 #kali-term-head > *:first-child { flex:1 1 auto !important; min-width:0; width:auto !important; }
-#kali-term-head > *:last-child { flex:0 0 auto !important; width:auto !important; }
+#kali-term-head #kali-target, #kali-term-head #kali-ctrlc { flex:0 0 auto !important; width:auto !important; }
+#kali-ctrlc button, #kali-ctrlc { min-height:28px !important; height:28px !important; padding:0 12px !important;
+  border-radius:8px !important; font-size:12px !important; font-weight:600 !important;
+  background:#3a2a24 !important; color:#ffb4a0 !important; border:1px solid #5a3a30 !important; white-space:nowrap; }
+#kali-ctrlc button:hover { background:#c0392b !important; color:#fff !important; }
 .term-chrome { display:flex; align-items:center; gap:7px; }
 .term-chrome .dot { width:11px; height:11px; border-radius:50%; display:inline-block; }
 .term-chrome .dot.r{background:#ff5f56;} .term-chrome .dot.y{background:#ffbd2e;} .term-chrome .dot.g{background:#27c93f;}
@@ -380,16 +460,40 @@ _KALI_CSS = """<style>
 
 /* Connect Kali — modal dialog (hidden until the header button adds .kopen) */
 #kali-connect-modal { display:none !important; }
-#kali-connect-modal.kopen { display:block !important; position:fixed !important; top:50%; left:50%;
-  transform:translate(-50%,-50%); z-index:10002 !important; width:min(392px,92vw) !important; max-width:392px !important;
-  border:1px solid var(--border-color-primary) !important; border-radius:16px !important;
-  background:var(--block-background-fill) !important; box-shadow:0 24px 70px rgba(0,0,0,.55) !important;
-  padding:0 !important; overflow:visible; animation:kali-pop .16s ease; }
-#kali-connect-modal.kopen::before { content:''; position:fixed; inset:0; background:rgba(0,0,0,.55);
-  backdrop-filter:blur(2px); z-index:-1; }
+#kali-connect-modal.kopen {
+  display:flex !important; flex-direction:column !important;
+  position:fixed !important; top:50%; left:50%; transform:translate(-50%,-50%);
+  z-index:10002 !important; width:min(400px,92vw) !important; max-width:400px !important;
+  height:auto !important; max-height:none !important; gap:0 !important;
+  border:1px solid rgba(214,85,46,.5) !important; border-radius:16px !important;
+  background:var(--background-fill-primary, #17130f) !important;
+  box-shadow:0 24px 70px rgba(0,0,0,.6) !important; padding:0 !important;
+  overflow:visible !important; animation:kali-pop .16s ease; }
+#kali-connect-modal.kopen::before { content:''; position:fixed; inset:0;
+  background:rgba(0,0,0,.6); backdrop-filter:blur(2px); z-index:-1; }
 @keyframes kali-pop { from{opacity:0; transform:translate(-50%,-46%) scale(.97)} to{opacity:1; transform:translate(-50%,-50%) scale(1)} }
-#kali-modal-close { margin-top:4px !important; }
-#kali-modal-close button { width:100% !important; }
+/* force every inner Gradio block to actually lay out (they otherwise collapse to a line) */
+#kali-connect-modal.kopen > *, #kali-connect-modal.kopen .block,
+#kali-connect-modal.kopen .form, #kali-connect-modal.kopen .gap, #kali-connect-modal.kopen .wrap {
+  display:block !important; width:100% !important; min-height:0 !important; min-width:0 !important;
+  background:transparent !important; border:none !important; box-shadow:none !important; }
+#kali-connect-modal.kopen .ref-head { display:flex !important; align-items:center !important; gap:8px !important;
+  padding:13px 15px !important; font-size:13.5px !important; font-weight:700 !important;
+  border-bottom:1px solid var(--border-color-primary) !important;
+  background:rgba(214,85,46,.12) !important; border-radius:16px 16px 0 0 !important; }
+#kali-connect-body { display:flex !important; flex-direction:column !important; gap:11px !important; padding:15px !important; }
+#kali-connect-body > * { width:100% !important; }
+#kali-user textarea, #kali-user input, #kali-pass textarea, #kali-pass input {
+  display:block !important; width:100% !important; min-height:42px !important; font-size:14px !important;
+  border:1px solid var(--border-color-primary) !important; border-radius:9px !important;
+  padding:9px 12px !important; box-sizing:border-box !important;
+  background:var(--block-background-fill) !important; color:var(--body-text-color) !important; }
+#kali-connect-btns { display:flex !important; gap:8px !important; flex-wrap:nowrap !important; }
+#kali-connect-btns > * { flex:1 1 0 !important; }
+#kali-connect-btns button { width:100% !important; min-height:40px !important; border-radius:9px !important; }
+#kali-modal-close { margin-top:2px !important; }
+#kali-modal-close button { width:100% !important; min-height:38px !important; border-radius:9px !important; }
+#kali-connect-hint, #kali-connect-hint * { font-size:11px !important; color:var(--body-text-color-subdued) !important; }
 
 /* most-powerful arsenal card */
 #kali-power { border:1px solid #d6552e !important; border-radius:13px !important;
@@ -409,17 +513,85 @@ _KALI_CSS = """<style>
 @media (max-width: 860px) {
   #kali-main { flex-direction:column !important; }
   #kali-term-col, #kali-ref-col { flex:1 1 100% !important; width:100% !important;
-    position:static !important; }
-  #kali-out textarea { font-size:12px !important; }
-  #kali-ref-view { max-height:420px !important; }
+    position:static !important; height:auto !important; }
+  #kali-out { flex:0 0 auto !important; }
+  #kali-out textarea { font-size:12px !important; height:58vh !important; }
+  #kali-ref { flex:0 0 auto !important; }
+  #kali-ref-view { flex:0 0 auto !important; max-height:50vh !important; }
 }
 </style>"""
 
 
+_DESK = {}   # components of the Kali Desktop launcher (filled by build, used by wire_tab)
+
+# Opens (or focuses) the desktop tab synchronously on the user's click — so pop-up blockers
+# allow it — and shows a "starting…" screen until the real desktop URL arrives.
+_DESK_OPEN_JS = """() => {
+  const w = window.open('', 'nanban-kali-desktop');
+  if (!w) { alert('Pop-up blocked. Allow pop-ups for Nanban, then click again.'); return; }
+  let blank = false;
+  try { blank = (!w.location.href || w.location.href === 'about:blank'); } catch (e) { blank = false; }
+  if (blank) {
+    w.document.open();
+    w.document.write('<!doctype html><title>Kali Linux — starting…</title><body style="margin:0;background:radial-gradient(1200px 600px at 50% 40%,#0f1a22 0%,#05080b 70%);color:#d9e2ec;font:15px system-ui,Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;text-align:center"><div style="font-size:64px">\U0001F409</div><div style="font-size:20px;font-weight:700">Starting your Kali Linux desktop…</div><div style="color:#8a96a3;font-size:13px">Real Kali XFCE desktop · first start takes about 10 seconds</div><div style="width:26px;height:26px;border:3px solid #223040;border-top-color:#2bd4bd;border-radius:50%;animation:r 1s linear infinite"></div><style>@keyframes r{to{transform:rotate(360deg)}}</style></body>');
+    w.document.close();
+  }
+  w.focus();
+  window.__kaliDesk = w;
+}"""
+
+_DESK_NAV_JS = """(u) => {
+  const w = window.__kaliDesk;
+  if (!u) {
+    try { if (w && !w.closed) { w.document.body.innerHTML = '<div style="font-size:60px">\U0001F409</div><div style="font-size:18px;font-weight:700">Kali desktop could not start</div><div style="color:#8a96a3;max-width:520px">See the message in the Nanban \U0001F409 Kali tab (this window can be closed).</div>'; } } catch (e) {}
+    return;
+  }
+  const full = u + (u.includes('?') ? '&' : '?') + 'back=' + encodeURIComponent(location.href);
+  try { if (w && !w.closed) { w.location.replace(full); w.focus(); return; } } catch (e) {}
+  const n = window.open(full, 'nanban-kali-desktop'); if (n) n.focus();
+}"""
+
+
+def open_desktop():
+    """Start the real Kali desktop (idempotent) → (status markdown, url or '')."""
+    import kali_desktop
+    ok, msg = kali_desktop.start()
+    if ok:
+        return (f"🟢 Kali Desktop running — [open it ↗]({kali_desktop.url()}) "
+                f"(real Kali XFCE in your browser · click inside to type)"), kali_desktop.url()
+    return f"🔴 {msg}", ""
+
+
+def wire_tab(tab) -> None:
+    """Pressing the 🐉 Kali tab itself opens the full-page Kali desktop."""
+    if not _DESK:
+        return
+    tab.select(open_desktop, None, [_DESK["status"], _DESK["url"]], js=_DESK_OPEN_JS).then(
+        None, _DESK["url"], None, js=_DESK_NAV_JS)
+
+
 def build() -> None:
+    import kali_desktop
+    kali_desktop.start_background()           # warm the real desktop up while the app loads
     with gr.Column(elem_id="kali-wrap"):
         gr.HTML(_KALI_CSS)
         _is_on = connected()
+
+        # ---- 🖥️ Kali Desktop — the real Kali OS, full page ----
+        with gr.Group(elem_id="kali-desk"):
+            with gr.Row(elem_id="kali-desk-bar"):
+                gr.HTML('<div class="kd-txt"><div class="kd-ico">🖥️</div><div>'
+                        '<div class="kd-title">Kali Desktop — the real Kali Linux OS, full screen</div>'
+                        '<div class="kd-sub">Top panel, app menu, File Manager, Terminal, every tool — '
+                        'opens in its own browser tab. Press the 🐉 Kali tab or this button.</div></div></div>',
+                        elem_id="kali-desk-txt")
+                desk_btn = gr.Button("🖥️ Open Kali Desktop ↗", variant="primary", size="sm", elem_id="kali-desk-btn")
+            desk_status = gr.Markdown("", elem_id="kali-desk-status")
+            desk_url = gr.Textbox(visible=False, elem_id="kali-desk-url")
+        _DESK.update(btn=desk_btn, status=desk_status, url=desk_url)
+        desk_btn.click(open_desktop, None, [desk_status, desk_url], js=_DESK_OPEN_JS).then(
+            None, desk_url, None, js=_DESK_NAV_JS)
+
         with gr.Row(elem_id="kali-head"):
             gr.Markdown("### 🐉 Kali Linux — terminal + AI, together", elem_id="kali-title")
             connect_toggle = gr.Button(
@@ -435,7 +607,7 @@ def build() -> None:
             with gr.Column(elem_id="kali-connect-body"):
                 k_user = gr.Textbox(show_label=False, container=False, value=_known_kali_user(),
                                     placeholder="Kali username (e.g. nanbanlinux)", elem_id="kali-user")
-                k_pass = gr.Textbox(show_label=False, container=False, type="password",
+                k_pass = gr.Textbox(show_label=False, container=False, type="password", value=_known_kali_pass(),
                                     placeholder="Password", elem_id="kali-pass")
                 with gr.Row(elem_id="kali-connect-btns"):
                     connect_btn = gr.Button("🔌 Connect", variant="primary", size="sm")
@@ -456,6 +628,7 @@ def build() -> None:
                         target = gr.Radio(choices=[("🐉 Kali", KALI), ("🖥️ This PC", "local")],
                                           value=KALI if connected() else "local", show_label=False,
                                           container=False, elem_id="kali-target")
+                        ctrlc_btn = gr.Button("■ Stop", size="sm", elem_id="kali-ctrlc")
                     term_out = gr.Textbox(show_label=False, lines=13, max_lines=26, interactive=False,
                                           elem_id="kali-out", buttons=["copy"], container=False,
                                           value="# Type a command below, or ask the AI (Tanglish). Output appears here.")
@@ -518,6 +691,7 @@ def build() -> None:
             _toggle_update, None, connect_toggle).then(None, None, None, js=_close_js)
         recheck_btn.click(status_line, None, status).then(_toggle_update, None, connect_toggle)
         term_in.submit(run, [term_in, target], [term_out, ref_view]).then(lambda: "", None, term_in)
+        ctrlc_btn.click(kali_interrupt, None, term_out)
         ai_btn.click(ai_shell, [ai_in, ai_auto, target], [term_in, term_out, ref_view]).then(
             lambda: "", None, ai_in)
         ai_in.submit(ai_shell, [ai_in, ai_auto, target], [term_in, term_out, ref_view]).then(
@@ -526,7 +700,32 @@ def build() -> None:
 
         def _install_arsenal():
             import kali_installer
+            import kali_desktop
             cmd = kali_installer.POWERFUL_CMD
+            # Preferred: WSL Kali on this PC → run detached inside Kali (keeps going even if this
+            # tab is closed) and stream its log here. Falls back to the SSH command otherwise.
+            if kali_desktop.available():
+                ok, msg = kali_desktop.arsenal_start()
+                head = "$ nanban-arsenal   (kali-linux-large · seclists · nuclei · bloodhound · netexec)"
+                if not ok:
+                    yield cmd, f"{head}\n\n🔴 {msg}", ""
+                    return
+                note = ("⏳ Already running — showing live progress." if msg == "already running"
+                        else "⏳ Started inside Kali (detached). Periya download — 20-40 min aagum. "
+                             "Tab close pannaalum install nikkaadhu.")
+                yield cmd, f"{head}\n{note}\n", ""
+                for _ in range(1800):          # up to ~90 min of live log
+                    time.sleep(3)
+                    log = kali_desktop.arsenal_log(45)
+                    yield cmd, f"{head}\n{note}\n\n{log}", ""
+                    if "=== DONE" in log:
+                        yield cmd, (f"{head}\n\n{log}\n\n✅ Full arsenal installed. Ella tools-um 🖥️ Kali Desktop "
+                                    "menu-la (01 Information Gathering … 13 Social Engineering) ready."), ""
+                        return
+                    if not kali_desktop.arsenal_running() and "=== DONE" not in log:
+                        yield cmd, f"{head}\n\n{log}\n\n🟠 Installer stopped before finishing — press the button again to resume.", ""
+                        return
+                return
             if not connected():
                 yield (cmd, f"$ {cmd}\n\n🟠 Kali connect pannala. Right side la **Connect** pannu, "
                        "apuram indha button press pannu — illa indha command-ah copy panni un Kali la "

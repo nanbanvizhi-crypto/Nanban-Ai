@@ -17,7 +17,7 @@ APP_DIR = config.BASE_DIR
 # Keys the Settings screen is allowed to change (must match config._apply_settings_override)
 EDITABLE = {
     "AGENT_NAME", "LLM_BACKEND", "MODEL", "EMBED_MODEL", "TEMPERATURE",
-    "HOSTED_BASE_URL", "HOSTED_API_KEY", "HOSTED_MODEL",
+    "HOSTED_BASE_URL", "HOSTED_API_KEY", "HOSTED_MODEL", "HOSTED_KEYS",
     "AUTOSTART_LAB", "OPEN_BROWSER_ON_START", "REQUIRE_VPN", "SECURITY_TAB",
     "WEB_COMPUTER_MODE", "LAN_ACCESS", "WEB_PASSWORD",
     "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID",
@@ -57,12 +57,15 @@ PROVIDERS = {
     "🟩 NVIDIA → Llama 3.3 70B (fast all-rounder)": {
         "backend": "hosted", "base": "https://integrate.api.nvidia.com/v1",
         "model": "meta/llama-3.3-70b-instruct"},
-    "🟩 NVIDIA → DeepSeek-R1 (reasoning)": {
+    "🟩 NVIDIA → DeepSeek V4.1 Flash (reasoning)": {
         "backend": "hosted", "base": "https://integrate.api.nvidia.com/v1",
-        "model": "deepseek-ai/deepseek-r1"},
+        "model": "deepseek-ai/deepseek-v4.1-flash"},
     "🟩 NVIDIA → Qwen2.5 Coder 32B (coding)": {
         "backend": "hosted", "base": "https://integrate.api.nvidia.com/v1",
         "model": "qwen/qwen2.5-coder-32b-instruct"},
+    "🟩 NVIDIA → MiniMax M3.1 Flash (vision, slower)": {
+        "backend": "hosted", "base": "https://integrate.api.nvidia.com/v1",
+        "model": "minimaxai/minimax-m3.1-flash"},
     # ---- PAID (optional, top frontier intelligence) ----
     "💳 OpenRouter → Claude 3.5 Sonnet (paid)": {
         "backend": "hosted", "base": "https://openrouter.ai/api/v1", "model": "anthropic/claude-3.5-sonnet"},
@@ -78,6 +81,29 @@ def load() -> dict:
         return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except (FileNotFoundError, ValueError):
         return {}
+
+
+# ---- per-model API keys ----
+# Each AI model (each dropdown preset) keeps its OWN key, under its own name.
+# Nothing is shared between models, so saving one never erases another.
+
+def get_key_for(slot: str) -> str:
+    """The saved API key for one model/preset, or '' if none saved yet."""
+    keys = load().get("HOSTED_KEYS", {}) or {}
+    return keys.get((slot or "").strip(), "")
+
+
+def set_key_for(slot: str, key: str) -> None:
+    """Store one model's key under its own name (never touches any other model's key)."""
+    slot = (slot or "").strip()
+    if not slot:
+        return
+    keys = dict(load().get("HOSTED_KEYS", {}) or {})
+    if key:
+        keys[slot] = key
+    else:
+        keys.pop(slot, None)
+    save({"HOSTED_KEYS": keys})
 
 
 def save(updates: dict) -> None:

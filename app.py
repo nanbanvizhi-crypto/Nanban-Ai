@@ -418,6 +418,7 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
         with gr.Tab("🐉 Kali", visible=False) as kali_tab:
             import kali_panel
             kali_panel.build()
+        kali_panel.wire_tab(kali_tab)        # pressing the tab opens the full-page Kali desktop
 
         with gr.Tab("🇮🇳 India Lab", visible=False) as india_tab:
             import india_lab_panel

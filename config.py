@@ -35,8 +35,11 @@ LLM_BACKEND = "local"
 #   OpenAI:                        https://api.openai.com/v1        model: gpt-4o-mini / gpt-4o
 #   Together:                      https://api.together.xyz/v1
 HOSTED_BASE_URL = "https://api.groq.com/openai/v1"
-HOSTED_API_KEY = ""                 # your key for the provider above
+HOSTED_API_KEY = ""                 # the ACTIVE provider's key (used by llm.py)
 HOSTED_MODEL = "openai/gpt-oss-20b"
+# Every provider keeps its OWN key here, mapped by base URL, so switching providers
+# never erases another one's key: {"https://api.cerebras.ai/v1": "csk-…", …}
+HOSTED_KEYS = {}
 
 # Let the agent run Python code it writes (Coding mode). Off by default:
 # code runs on your own laptop, so only switch this on if you understand that.
@@ -247,7 +250,7 @@ def _apply_settings_override():
     import json
     allowed = {
         "AGENT_NAME", "LLM_BACKEND", "MODEL", "EMBED_MODEL", "TEMPERATURE",
-        "HOSTED_BASE_URL", "HOSTED_API_KEY", "HOSTED_MODEL",
+        "HOSTED_BASE_URL", "HOSTED_API_KEY", "HOSTED_MODEL", "HOSTED_KEYS",
         "AUTOSTART_LAB", "OPEN_BROWSER_ON_START", "REQUIRE_VPN", "SECURITY_TAB",
         "WEB_COMPUTER_MODE", "LAN_ACCESS", "WEB_PASSWORD",
         "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID",

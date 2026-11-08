@@ -108,6 +108,7 @@ class RemoteHost:
     cwd: str = "~"
     client: object = None
     _sftp: object = None
+    _shell: object = None
     home: str = ""
     os_name: str = ""
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -137,13 +138,76 @@ class RemoteHost:
         self.os_name = probe.splitlines()[0] if probe else "Linux"
 
     def close(self) -> None:
-        for obj in (self._sftp, self.client):
+        for obj in (self._shell, self._sftp, self.client):
             try:
                 if obj:
                     obj.close()
             except Exception:
                 pass
-        self._sftp = self.client = None
+        self._shell = self._sftp = self.client = None
+
+    # ---- interactive shell (a real PTY, kept open: lets msfconsole, python, etc. run and
+    #      keeps state like cd/env between commands — unlike the one-shot run() below)
+
+    def ensure_shell(self) -> str:
+        """Open the interactive shell if it isn't already. Returns the initial banner/prompt once."""
+        chan = self._shell
+        if chan is not None and not chan.closed:
+            return ""
+        with self.lock:
+            chan = self.client.invoke_shell(term="xterm-256color", width=140, height=42)
+            self._shell = chan
+        time.sleep(0.5)
+        return self._drain_shell()
+
+    def _drain_shell(self) -> str:
+        chan = self._shell
+        if chan is None:
+            return ""
+        data = b""
+        try:
+            while chan.recv_ready():
+                data += chan.recv(65536)
+                time.sleep(0.02)
+        except Exception:
+            pass
+        return data.decode("utf-8", errors="replace")
+
+    def shell_send(self, text: str, newline: bool = True) -> None:
+        """Send a line (or raw keys) to the interactive shell."""
+        self.ensure_shell()
+        try:
+            self._shell.send(text + ("\n" if newline else ""))
+        except Exception:
+            pass
+
+    def shell_interrupt(self) -> None:
+        """Send Ctrl-C to the interactive shell (stop a running tool)."""
+        self.ensure_shell()
+        try:
+            self._shell.send("\x03")
+        except Exception:
+            pass
+
+    def shell_stream(self, idle: float = 0.5, max_wait: int | None = None):
+        """Yield output from the interactive shell until it stays quiet for `idle` seconds
+        (or `max_wait` is hit — for tools that never go idle, like a server)."""
+        chan = self._shell
+        if chan is None:
+            return
+        max_wait = max_wait or DEFAULT_TIMEOUT
+        start = time.monotonic()
+        last = start
+        while True:
+            got = self._drain_shell()
+            if got:
+                yield got
+                last = time.monotonic()
+            else:
+                now = time.monotonic()
+                if now - last >= idle or now - start >= max_wait:
+                    return
+                time.sleep(0.05)
 
     def alive(self) -> bool:
         try:

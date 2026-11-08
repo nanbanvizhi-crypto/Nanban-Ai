@@ -299,26 +299,70 @@ def build() -> None:
                     "intelligence. Saved instantly, no file editing. Not sure of the model name? Click "
                     "**Show my available models** below.")
         cur = st.load()
+
+        def _current_provider_label():
+            """Which preset matches the currently-active backend/base, so the screen opens on it."""
+            backend = cur.get("LLM_BACKEND", config.LLM_BACKEND)
+            base = (cur.get("HOSTED_BASE_URL") or config.HOSTED_BASE_URL or "").rstrip("/")
+            for label, p in st.PROVIDERS.items():
+                if p["backend"] != backend:
+                    continue
+                if backend in ("local", "portable") or (p.get("base", "").rstrip("/") == base):
+                    return label
+            return list(st.PROVIDERS.keys())[0]
+
+        _init_label = _current_provider_label()
+        _init_p = st.PROVIDERS[_init_label]
+        if _init_p["backend"] in ("local", "portable"):
+            _init_model = "(bundled)" if _init_p["backend"] == "portable" else (cur.get("MODEL") or config.MODEL)
+            _init_base, _init_key, _init_base_vis = _init_p.get("base", ""), "", False
+        else:
+            _init_base = cur.get("HOSTED_BASE_URL") or _init_p.get("base", "")
+            _init_model = cur.get("HOSTED_MODEL") or _init_p.get("model", "")
+            # this model's own saved key (fall back to the active key for first migration)
+            _init_key = st.get_key_for(_init_label) or cur.get("HOSTED_API_KEY", "")
+            _init_base_vis = True
+
         provider = gr.Dropdown(choices=list(st.PROVIDERS.keys()),
-                               value=list(st.PROVIDERS.keys())[0], label="Provider / model preset")
+                               value=_init_label, label="Provider / model preset")
         with gr.Row():
-            model_box = gr.Textbox(value=config.MODEL, label="Model name",
+            model_box = gr.Textbox(value=_init_model, label="Model name",
                                    info="Local: an Ollama model (e.g. llama3.1:8b). Hosted: the provider's model id.")
-            key_box = gr.Textbox(value=cur.get("HOSTED_API_KEY", ""), label="API key (hosted only)",
-                                 type="password", info="From your provider's dashboard. Stored locally, never shared.")
-        base_box = gr.Textbox(value=cur.get("HOSTED_BASE_URL", config.HOSTED_BASE_URL),
-                              label="Hosted API base URL", visible=False)
+            key_box = gr.Textbox(value=_init_key, label="API key (each provider keeps its own)",
+                                 type="password", elem_id="nb-hosted-key",
+                                 info="Saved per provider. Switch providers and the right key loads automatically.")
+        base_box = gr.Textbox(value=_init_base, label="Hosted API base URL", visible=_init_base_vis)
         with gr.Row():
             save_btn = gr.Button("💾 Save & apply", variant="primary", size="sm")
             list_btn = gr.Button("🔎 Show my available models", variant="secondary", size="sm")
         settings_status = gr.Markdown(f"Current brain: **{__import__('llm').describe()}**")
 
-        def _on_provider(name):
+        def _on_provider(name, key):
+            """Picking a provider fills the Model name automatically. If we already have a
+            working key for this same provider, auto-pick a model id that is actually valid
+            on that key (so the name is always correct, never a dead 404)."""
             p = st.PROVIDERS[name]
             if p["backend"] in ("local", "portable"):
                 default_model = "(bundled)" if p["backend"] == "portable" else config.MODEL
-                return gr.update(value=default_model), gr.update(visible=False), gr.update(value="")
-            return gr.update(value=p["model"]), gr.update(visible=True, value=p["base"]), gr.update()
+                return gr.update(value=default_model), gr.update(visible=False), gr.update()
+            model = p.get("model", "auto")
+            base = p["base"]
+            # Load THIS model's own saved key (each model/preset keeps its own key by name).
+            provider_key = st.get_key_for(name)
+            if model != "auto" and provider_key:        # we have this model's key → validate model
+                try:
+                    import llm
+                    old = (config.LLM_BACKEND, config.HOSTED_BASE_URL, config.HOSTED_API_KEY)
+                    config.LLM_BACKEND, config.HOSTED_BASE_URL, config.HOSTED_API_KEY = "hosted", base, provider_key
+                    llm._client = None
+                    avail = llm.list_models()
+                    if avail and model not in avail:
+                        model = llm.pick_available_model() or model
+                    config.LLM_BACKEND, config.HOSTED_BASE_URL, config.HOSTED_API_KEY = old
+                    llm._client = None
+                except Exception:
+                    pass
+            return gr.update(value=model), gr.update(visible=True, value=base), gr.update(value=provider_key)
 
         def _list_models(name, key, base):
             """Show the exact model ids this provider+key can use, so the user picks a valid one."""
@@ -358,10 +402,12 @@ def build() -> None:
                 if not key:
                     return "⚠️ This provider needs an API key. Paste one and Save again."
                 backend = p["backend"]           # "hosted" or "router"
-                updates = {"LLM_BACKEND": backend, "HOSTED_BASE_URL": base or p["base"],
+                active_base = base or p["base"]
+                updates = {"LLM_BACKEND": backend, "HOSTED_BASE_URL": active_base,
                            "HOSTED_API_KEY": key}
                 updates["HOSTED_MODEL"] = "auto" if backend in ("router", "council") else (model or p["model"])
                 st.save(updates)
+                st.set_key_for(name, key)   # store THIS model's key under its own name (never shared)
             import llm
             ok, desc = llm.ping()
             if not ok:
@@ -373,14 +419,15 @@ def build() -> None:
                 avail = llm.list_models()
                 if avail and chosen not in avail:
                     fixed = llm.pick_available_model()
-                    st.save({"HOSTED_MODEL": fixed})
-                    desc = llm.describe()
-                    return (f"ℹ️ `{chosen}` isn't available on your key, so I switched you to "
-                            f"`{fixed}` (which is). Current brain: **{desc}**. "
-                            f"To choose another, click **🔎 Show my available models**.")
+                    if fixed and fixed != chosen:       # only announce a real switch
+                        st.save({"HOSTED_MODEL": fixed})
+                        desc = llm.describe()
+                        return (f"ℹ️ `{chosen}` isn't available on your key, so I switched you to "
+                                f"`{fixed}` (which is). Current brain: **{desc}**. "
+                                f"To choose another, click **🔎 Show my available models**.")
             return f"✅ Saved. Current brain: **{desc}**"
 
-        provider.change(_on_provider, provider, [model_box, base_box, key_box])
+        provider.change(_on_provider, [provider, key_box], [model_box, base_box, key_box])
         save_btn.click(_save_settings, [provider, model_box, key_box, base_box], settings_status)
         list_btn.click(_list_models, [provider, key_box, base_box], settings_status)
 
