@@ -34,7 +34,7 @@ def build() -> None:
             with gr.Group(elem_classes=["admin-card"]):
                 gr.Markdown("#### 🐉 Kali Linux — Auto-Setup")
                 import kali_wizard as kw
-                state = kw.detect()
+                state = kw.detect_cached()
                 ready_badge = gr.Markdown(
                     "**Status: ✅ Ready**" if state.fully_ready
                     else "**Status: ⏳ Not set up yet** — one click below installs everything.")

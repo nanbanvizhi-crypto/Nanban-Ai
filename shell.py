@@ -37,13 +37,25 @@ def _decode(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
+_wsl_cache = None
+
+
 def wsl_available() -> bool:
+    """True when WSL has at least one distro. Only LISTS distros (instant) — it must not start one:
+    booting the default distro just to answer this cost 15-30 s at every app start."""
+    global _wsl_cache
+    if _wsl_cache is not None:
+        return _wsl_cache
     if not IS_WINDOWS or not shutil.which("wsl"):
+        _wsl_cache = False
         return False
     try:
-        return subprocess.run(["wsl.exe", "-e", "true"], capture_output=True, timeout=30).returncode == 0
+        r = subprocess.run(["wsl.exe", "-l", "-q"], capture_output=True, timeout=10)
+        names = r.stdout.decode("utf-16-le", "ignore").replace("\x00", "").split()
+        _wsl_cache = r.returncode == 0 and bool(names)
     except Exception:
-        return False
+        _wsl_cache = False
+    return _wsl_cache
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\r")
@@ -74,7 +86,9 @@ class ShellSession:
         self.backend = ""
         self.powershell = (shutil.which("pwsh") or shutil.which("powershell") or "powershell") if IS_WINDOWS else ""
         self.posix_shell = "" if IS_WINDOWS else (shutil.which("bash") or os.environ.get("SHELL") or "/bin/sh")
-        self.set_backend("linux" if backend == "auto" else backend)
+        # probe=False: the Linux start folder is resolved lazily on the first command instead of
+        # booting the default WSL distro during app start-up (that alone cost ~30 s from a hard disk)
+        self.set_backend("linux" if backend == "auto" else backend, probe=False)
 
     # ------------------------------------------------------------ backends
 
@@ -82,7 +96,7 @@ class ShellSession:
     def uses_wsl(self) -> bool:
         return IS_WINDOWS and self.backend == "linux"
 
-    def set_backend(self, backend: str) -> str:
+    def set_backend(self, backend: str, probe: bool = True) -> str:
         """Switch between 'linux' (WSL or busybox), 'powershell' and 'cmd'. Returns a status message."""
         backend = {"windows": "powershell", "ps": "powershell", "bash": "linux", "wsl": "linux",
                    "busybox": "linux"}.get(backend, backend)
@@ -97,9 +111,10 @@ class ShellSession:
             self.has_wsl = self.has_wsl or wsl_available()
             if self.has_wsl:
                 self.backend = "linux"
-                out = self._wsl_capture(["pwd"], cwd_override=str(self.cwd))
-                self.linux_cwd = out.strip().splitlines()[-1] if out.strip() else "~"
-                self.linux_home = self._wsl_capture(["bash", "-lc", "echo $HOME"]).strip()
+                if probe:
+                    out = self._wsl_capture(["pwd"], cwd_override=str(self.cwd))
+                    self.linux_cwd = out.strip().splitlines()[-1] if out.strip() else "~"
+                    self.linux_home = self._wsl_capture(["bash", "-lc", "echo $HOME"]).strip()
                 return "Switched to Linux (bash in WSL)."
             # No WSL — fall back to the bundled BusyBox for Linux-style commands,
             # so Nanban Portable has a usable Linux shell with zero install.
@@ -140,7 +155,7 @@ class ShellSession:
             path = self.linux_cwd
             if self.linux_home and (path == self.linux_home or path.startswith(self.linux_home + "/")):
                 path = "~" + path[len(self.linux_home):]
-            return path
+            return path or "~"
         home = str(Path.home())
         path = str(self.cwd)
         return "~" + path[len(home):] if path == home or path.startswith(home + os.sep) else path

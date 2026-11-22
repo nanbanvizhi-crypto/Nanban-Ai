@@ -11,6 +11,7 @@ from pathlib import Path
 
 import gradio as gr
 
+import chat_history
 import config
 import docs_rag
 import tools
@@ -85,7 +86,8 @@ def documents_markdown() -> str:
 
 def mode_markdown(mode: str) -> str:
     about = COMPUTER_MODE["about"] if mode == "computer" else config.MODES[mode]["about"]
-    return about
+    label = COMPUTER_MODE["label"] if mode == "computer" else config.MODES[mode]["label"]
+    return f"<span class='nb-mode-chip'>{label}</span> <span class='nb-mode-about'>{about}</span>"
 
 
 def status_markdown() -> str:
@@ -117,7 +119,7 @@ def phone_qr_image():
 ACTIVE: dict[str, float] = {}   # user -> last activity time (for the admin page)
 
 
-def respond(user_text, display, agents, mode, allow_actions, image_path=None, request: gr.Request = None):
+def respond(user_text, display, agents, mode, allow_actions, reply_lang="auto", image_path=None, request: gr.Request = None):
     user_text = (user_text or "").strip()
     images = None
     if image_path:
@@ -149,6 +151,7 @@ def respond(user_text, display, agents, mode, allow_actions, image_path=None, re
     else:
         agent = agents.setdefault("chat", Agent(mode, user=user))
         agent.mode = mode
+        agent.reply_lang = reply_lang or "auto"
     shown_text = user_text + ("  🖼️ _(image attached)_" if images else "")
     display = list(display or []) + [{"role": "user", "content": shown_text}]
     yield gr.Textbox(value="", submit_btn=False, stop_btn=True), display, display, agents, gr.skip(), gr.skip()
@@ -192,10 +195,125 @@ def respond(user_text, display, agents, mode, allow_actions, image_path=None, re
     yield gr.Textbox(submit_btn=True, stop_btn=False), display, display, agents, memory_markdown(user), tasks_markdown(user)
 
 
-def new_chat(agents):
+def new_chat(agents, request: gr.Request = None):
     for agent in (agents or {}).values():
         agent.reset()
-    return [], [], agents
+    return [], [], agents, "", chat_history.sidebar_html(username_of(request), "")
+
+
+def save_chat(display, chat_id, mode, request: gr.Request = None):
+    """After every answer: persist the conversation (kept 7 days) and refresh the sidebar list."""
+    user = username_of(request)
+    chat_id = chat_history.save(user, chat_id, mode, display)
+    return chat_id, chat_history.sidebar_html(user, chat_id), _last_answer(display)
+
+
+_VIZHI_ACTIONS = {"open_section", "set_mode", "new_chat", "theme", "kali_run", "terminal_run", "make_image",
+                  "repeat", "stop_speaking", "vizhi_off", "chat"}
+_VIZHI_ROUTER = """You are the intent router of "Vizhi", the voice assistant inside the Nanban app.
+The user speaks English, Tanglish (Tamil in English letters) or Tamil (often Tamil script from speech-to-text,
+with English words transliterated, e.g. "காளி ஓபன் பண்ணு" = "open Kali"). Speech recognition makes mistakes — infer the intent.
+
+Reply with ONE JSON object and nothing else:
+{"action": "...", "target": "...", "say": "..."}
+
+Actions:
+- "open_section": show an app section. target = exactly one of: Chat, Images, Terminal, Security, Kali, India Lab, Learn, Admin
+- "set_mode": change the chat persona. target = one of: Vizhi, Personal Assistant, Coding, Writing, Research, Study, Business, Security Tutor, Computer
+- "new_chat": start a fresh conversation. target = ""
+- "theme": target = "dark" or "light"
+- "kali_run": the user wants something DONE on Kali Linux (scan, nmap, a hacking/security tool, a Linux command on Kali).
+  target = the task as one clear English sentence including any IP/host they said (e.g. "scan open ports on 127.0.0.1")
+- "terminal_run": run a concrete command on this Windows PC. target = the exact command
+- "make_image": draw / generate a picture. target = an English description of the picture
+- "repeat": say the last answer again. "stop_speaking": be quiet now. "vizhi_off": turn the voice assistant off / go to sleep.
+- "chat": ANYTHING else — questions, facts, explanations, advice, small talk, writing, to-dos, reminders. target = ""
+
+Rules:
+- Only choose a non-chat action when the user is clearly giving that command. A question ABOUT something
+  ("what is nmap", "how do I scan ports", "kali na enna") is "chat", not kali_run / open_section.
+- "say" = a short, natural spoken confirmation in Tanglish (English letters only, max 8 words), e.g.
+  "Kali open pannitten", "Seri, ports scan pannuren", "Coding mode ku maathitten". For "chat" use "".
+Examples:
+"open kali" -> {"action":"open_section","target":"Kali","say":"Kali open pannitten"}
+"காளி ஓபன் பண்ணு" -> {"action":"open_section","target":"Kali","say":"Kali open pannitten"}
+"settings kaattu" -> {"action":"open_section","target":"Admin","say":"Admin open pannitten"}
+"127.0.0.1 la open ports scan pannu" -> {"action":"kali_run","target":"scan open ports on 127.0.0.1","say":"Seri, ports scan pannuren"}
+"coding mode ku maathu" -> {"action":"set_mode","target":"Coding","say":"Coding mode ku maathitten"}
+"oru sunset beach padam podu" -> {"action":"make_image","target":"a sunset over a beach","say":"Padam ready pannuren"}
+"tamil nadu cm yaar ippo" -> {"action":"chat","target":"","say":""}
+"nmap na enna" -> {"action":"chat","target":"","say":""}
+"தமிழ்நாடு முதலமைச்சர் யார்" -> {"action":"chat","target":"","say":""}"""
+
+
+def vizhi_intent(payload):
+    """'<id>|<what the user said>' -> JSON {id, action, target, say}. Never raises: falls back to chat."""
+    import json
+    import re
+    rid, _, text = (payload or "").partition("|")
+    result = {"action": "chat", "target": "", "say": ""}
+    text = text.strip()
+    if text:
+        try:
+            out = ""
+            for chunk in llm.chat([{"role": "system", "content": _VIZHI_ROUTER}, {"role": "user", "content": text}],
+                                  tools=None, options={"temperature": 0}):
+                out += chunk.message.content or ""
+            m = re.search(r"\{.*\}", out, re.S)
+            data = json.loads(m.group(0)) if m else {}
+            if data.get("action") in _VIZHI_ACTIONS:
+                result = {"action": data["action"], "target": str(data.get("target") or ""),
+                          "say": str(data.get("say") or "")[:120]}
+        except Exception:
+            pass
+    try:
+        result["id"] = int(rid)
+    except ValueError:
+        pass
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _last_answer(display) -> str:
+    """The final plain assistant text after the last user message (no tool cards) — what Vizhi reads aloud."""
+    answer = ""
+    for m in display or []:
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "user":
+            answer = ""
+        elif m.get("role") == "assistant" and not m.get("metadata") and str(m.get("content", "")).strip():
+            answer = str(m["content"])
+    return answer
+
+
+def load_history(request: gr.Request = None):
+    return chat_history.sidebar_html(username_of(request), "")
+
+
+def pick_chat(token, agents, cur_id, request: gr.Request = None):
+    """Sidebar click: open a saved chat (token = chat id) or delete one (token = 'del:<id>').
+    Returns chatbot, display_state, agents, chat_id, mode, history list, cleared token."""
+    user = username_of(request)
+    token = (token or "").strip()
+    agents = agents or {}
+    if token.startswith("del:"):
+        cid = token[4:]
+        chat_history.delete(user, cid)
+        if cid == cur_id:                               # deleted the chat that is open → clear it
+            for agent in agents.values():
+                agent.reset()
+            return [], [], agents, "", gr.skip(), chat_history.sidebar_html(user, ""), ""
+        return gr.skip(), gr.skip(), agents, cur_id, gr.skip(), chat_history.sidebar_html(user, cur_id), ""
+    data = chat_history.load(user, token)
+    if not data:
+        return gr.skip(), gr.skip(), agents, cur_id, gr.skip(), chat_history.sidebar_html(user, cur_id), ""
+    display = data.get("display", [])
+    mode = data.get("mode") if data.get("mode") in config.MODES else config.DEFAULT_MODE
+    agent = Agent(mode, user=user)
+    agent.history = chat_history.to_agent_history(display)   # the AI remembers this conversation
+    agent.chat_id = data["id"]
+    agents["chat"] = agent
+    return display, display, agents, data["id"], gr.update(value=mode), chat_history.sidebar_html(user, data["id"]), ""
 
 
 def change_mode(mode, agents):
@@ -345,10 +463,22 @@ def toggle_allow(mode):
 with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
     agent_state = gr.State(None)
     display_state = gr.State([])
+    chat_id_state = gr.State("")
 
     with gr.Sidebar(open=True, width=280):
         hello_view = gr.HTML(brand_html())
         new_btn = gr.Button("＋  New chat", variant="secondary", elem_id="new-chat")
+        gr.HTML("<div class='nb-sec-title'>NAVIGATE</div><div id='nb-nav'></div>", elem_id="nb-nav-wrap")
+        gr.HTML("<div class='nb-sec-title'>RECENT <span>7 days</span></div>", elem_id="nb-hist-head")
+        history_view = gr.HTML(chat_history.sidebar_html(), elem_id="nb-hist-wrap")
+        hist_pick = gr.Textbox(elem_id="hist-pick", show_label=False, container=False)
+        hist_go = gr.Button("open", elem_id="hist-go")
+        # invisible plumbing for the Vizhi voice assistant (driven from the page's JavaScript)
+        viz_in = gr.Textbox(elem_id="viz-in", show_label=False, container=False)
+        viz_go = gr.Button("route", elem_id="viz-go")
+        viz_out = gr.Textbox(elem_id="viz-out", show_label=False, container=False)
+        viz_say = gr.Textbox(elem_id="viz-say", show_label=False, container=False)
+        gr.HTML("<div class='nb-sec-title'>WORKSPACE</div>", elem_id="nb-ws-head")
         with gr.Accordion("📚 Documents", open=False):
             gr.Markdown("_Study mode answers from these files._")
             docs_view = gr.Markdown(documents_markdown())
@@ -369,19 +499,33 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
         with gr.Tab("💬 Chat"):
             with gr.Column(elem_id="chat-col"):
                 mode = gr.Radio(choices=MODE_CHOICES, value=config.DEFAULT_MODE, show_label=False, container=False, elem_id="modes")
-                mode_info = gr.Markdown(mode_markdown(config.DEFAULT_MODE), elem_id="mode-info")
+                with gr.Row(elem_id="mode-row"):
+                    mode_info = gr.Markdown(mode_markdown(config.DEFAULT_MODE), elem_id="mode-info")
+                    reply_lang = gr.Dropdown(
+                        choices=[("🌐 Reply: Auto", "auto"), ("Reply: English", "english"),
+                                 ("Reply: Tanglish", "tanglish"), ("Reply: தமிழ்", "tamil")],
+                        value="auto", show_label=False, container=False, scale=0,
+                        elem_id="reply-lang", min_width=176)
                 allow_actions = gr.Checkbox(label="⚡ Allow actions: the AI may run commands and edit files on this laptop",
                                             value=False, visible=False, elem_id="allow-actions", container=False)
                 chatbot = gr.Chatbot(
                     elem_id="chat", show_label=False, height="calc(100dvh - 372px)", min_height=300,
-                    placeholder=f"### Vanakkam 👋\nNaan {config.AGENT_NAME}. Ketkanum nu irukkadha edhuvum kelunga — Tamil, English or Tanglish.",
+                    placeholder=("<div class='nb-hero'><div class='nb-hero-orb'><span>&gt;_</span></div>"
+                                 f"<div class='nb-hero-title'>{config.AGENT_NAME.upper()}</div>"
+                                 "<div class='nb-hero-sub'>Vanakkam 👋 &nbsp;Ask anything — English, Tanglish or Tamil.</div>"
+                                 "<div class='nb-hero-stats'><span>● online</span><span>live web search</span>"
+                                 "<span>kali linked</span><span>7-day memory</span></div></div>"),
                     buttons=["copy"], feedback_options=None, layout="bubble",
                 )
                 image_in = gr.Image(sources=["upload"], type="filepath", height=96,
                                     show_label=False, elem_id="img-in", container=False)
                 with gr.Column(elem_id="composer"):
-                    msg = gr.Textbox(placeholder="Message…", show_label=False, container=False, autofocus=True,
-                                     submit_btn=True, stop_btn=False, lines=1, max_lines=6)
+                    with gr.Row(elem_id="composer-row"):
+                        attach_btn = gr.Button("📎", elem_id="attach-btn", scale=0, min_width=44)
+                        msg = gr.Textbox(placeholder="Message Nanban…  (English · Tanglish · Tamil)", show_label=False,
+                                         container=False, autofocus=True, scale=1,
+                                         submit_btn=True, stop_btn=False, lines=1, max_lines=6)
+                    attach_btn.click(None, None, None, js="() => { document.body.classList.toggle('nb-attach'); }")
                     examples = gr.Examples(examples=[[e] for e in EXAMPLES[config.DEFAULT_MODE]], inputs=msg,
                                            label="", elem_id="examples")
 
@@ -432,12 +576,21 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
             import admin_panel
             admin_panel.build()
 
+    # chat_event must stay the queued respond() event itself — the Stop button cancels it
     chat_event = msg.submit(
-        respond, [msg, display_state, agent_state, mode, allow_actions, image_in],
+        respond, [msg, display_state, agent_state, mode, allow_actions, reply_lang, image_in],
         [msg, chatbot, display_state, agent_state, memory_view, tasks_view],
-    ).then(lambda: None, None, image_in)
+    )
+    chat_event.then(lambda: None, None, image_in).then(
+        save_chat, [display_state, chat_id_state, mode], [chat_id_state, history_view, viz_say]).then(
+        None, viz_say, None, js="(t) => { if (window.__nbSpeakAnswer) window.__nbSpeakAnswer(t); }")
+    viz_go.click(vizhi_intent, viz_in, viz_out, show_progress="hidden").then(
+        None, viz_out, None, js="(o) => { if (window.__vizhiIntent) window.__vizhiIntent(o); }")
     msg.stop(lambda: gr.Textbox(submit_btn=True, stop_btn=False), None, msg, cancels=[chat_event])
-    new_btn.click(new_chat, agent_state, [chatbot, display_state, agent_state])
+    new_btn.click(new_chat, agent_state, [chatbot, display_state, agent_state, chat_id_state, history_view])
+    hist_go.click(pick_chat, [hist_pick, agent_state, chat_id_state],
+                  [chatbot, display_state, agent_state, chat_id_state, mode, history_view, hist_pick])
+    demo.load(load_history, None, history_view)
     mode.change(change_mode, [mode, agent_state], [mode_info, agent_state, examples.dataset])
     mode.change(toggle_allow, mode, allow_actions)
     upload.upload(upload_documents, upload, [docs_view, docs_status, upload])
@@ -447,6 +600,14 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
     import web_extras
     demo.load(on_load, None, [memory_view, tasks_view, status_view, admin_tab, terminal_tab, hello_view, topbar, security_tab, kali_tab, india_tab, learn_tab],
               js=web_extras.INIT_JS)
+
+
+def _warm_ai_background():
+    import threading
+    threading.Thread(target=llm.warmup, daemon=True).start()
+
+
+_warm_ai_background()
 
 
 def _ensure_ai_ready():

@@ -8,6 +8,7 @@ badges so it feels like a real lab you make progress in.
 import gradio as gr
 
 import india_lab as il
+import india_lab_tools as ilt
 import llm
 
 MAXQ = 3   # how many quiz questions we render per topic
@@ -125,6 +126,35 @@ def build():
 
         detail = gr.Markdown(il.detail_markdown(il.DOMAINS[0]["id"]), elem_id="il-detail")
 
+        # ---------------- LIVE ARSENAL — real tools, running on Kali ----------------
+        with gr.Column(elem_id="il-arsenal"):
+            gr.HTML('<div class="il-ars-head"><span class="il-ars-t">⚡ Elite Arsenal — world\'s top 10 hacking tools</span>'
+                    '<span class="il-ars-live">● LIVE on Kali</span></div>')
+            with gr.Row(elem_id="il-top10"):
+                top_btns = []
+                for _t in ilt.TOP_TOOLS:
+                    top_btns.append((_t, gr.Button(f'{_t["icon"]} {_t["name"]}', size="sm",
+                                                   elem_classes=["il-toolbtn"])))
+            dom_tools = gr.Dropdown(choices=[(t, t) for t in il.DOMAINS[0]["tools"]], value=None,
+                                    show_label=False, container=False, elem_id="il-domtools",
+                                    info="🔧 Indha domain-oda tools — onnu thernedu, ready command load aagum")
+            with gr.Row(elem_id="il-oprow"):
+                op_in = gr.Textbox(placeholder="🧠 Sollu, Nanban pannidum… e.g. 'scan 127.0.0.1 all ports', "
+                                   "'nuclei on localhost', 'crack this md5 hash'", show_label=False,
+                                   container=False, scale=5, elem_id="il-op-in")
+                op_btn = gr.Button("⚡ AI Run", variant="primary", scale=1, size="sm", elem_id="il-op-run")
+            lab_out = gr.Textbox(show_label=False, lines=13, max_lines=26, interactive=False, buttons=["copy"],
+                                 elem_id="il-labout", container=False,
+                                 value="# ⚡ Elite tools run here, LIVE on Kali. Press a tool above, pick a domain "
+                                       "tool, or tell the AI what to do. Errors auto-fix pannum.")
+            with gr.Row(elem_id="il-cmdrow"):
+                cmd_in = gr.Textbox(placeholder="command…  (e.g. nmap -sV 127.0.0.1)", show_label=False,
+                                    container=False, scale=5, elem_id="il-cmd-in")
+                run_btn = gr.Button("▶ Run", variant="secondary", scale=1, size="sm", elem_id="il-cmd-run")
+                stop_btn = gr.Button("■ Stop", variant="secondary", scale=1, size="sm", elem_id="il-cmd-stop")
+            autofix = gr.Checkbox(value=True, label="🤖 AI auto-fix on error (one-shot) · 🛡️ own lab / localhost only",
+                                  container=False, elem_id="il-autofix")
+
         # ---------------- hands-on workbench ----------------
         with gr.Column(elem_id="il-workbench"):
             gr.Markdown("### 🧪 Lab actions — oru button press pannu, Nanban live-ah kathu tharum")
@@ -176,6 +206,66 @@ def build():
     picker.change(
         _pick, picker,
         [detail, sel, header, act_out, quiz_result] + radios + [quiz_btn, quiz_note])
+
+    def _dom_tools(did):
+        d = il.domain_by_id(did or il.DOMAINS[0]["id"]) or il.DOMAINS[0]
+        return gr.update(choices=[(t, t) for t in d.get("tools", [])], value=None)
+    picker.change(_dom_tools, sel, dom_tools)
+
+    # ---------------- LIVE ARSENAL wiring ----------------
+    def _tool_click(tool):
+        def run():
+            if tool.get("gui"):
+                yield "", (f"$ {tool['name']}\n\n🖥️  {tool['name']} oru GUI tool. 🐉 **Kali** tab "
+                           "→ Desktop-la open pannu (dragon menu → category). Indha lab terminal CLI tools-ku.")
+                return
+            cmd = tool["demo"]
+            yield cmd, f"$ {cmd}\n⏳ Running on Kali…"
+            for out in ilt.smart_run(cmd, auto_fix=True):
+                yield cmd, out
+        return run
+    for _t, _btn in top_btns:
+        _btn.click(_tool_click(_t), None, [cmd_in, lab_out])
+
+    def _load_domtool(tool):
+        if not tool:
+            return gr.update()
+        return gr.update(value=ilt.starter_for(tool))
+    dom_tools.change(_load_domtool, dom_tools, cmd_in)
+
+    def _op_run(intent):
+        intent = (intent or "").strip()
+        if not intent:
+            yield "", "🧠 Sollu enna pannanum… (e.g. 'scan localhost', 'run nuclei on 127.0.0.1')"
+            return
+        yield "", "🧠 AI command yosikiradhu…"
+        cmd = ilt.ai_to_command(intent)
+        if not cmd or cmd.startswith("#"):
+            yield "", f"🤖 {cmd or 'Command generate panna mudiyala. Chat tab-la model set pannu.'}"
+            return
+        yield cmd, f"$ {cmd}\n⏳ Running on Kali…"
+        for out in ilt.smart_run(cmd, auto_fix=True):
+            yield cmd, out
+    op_evt = op_btn.click(_op_run, op_in, [cmd_in, lab_out])
+    op_in.submit(_op_run, op_in, [cmd_in, lab_out])
+
+    def _cmd_run(cmd, fix):
+        for out in ilt.smart_run(cmd, auto_fix=bool(fix)):
+            yield out
+    run_evt = run_btn.click(_cmd_run, [cmd_in, autofix], lab_out)
+    cmd_in.submit(_cmd_run, [cmd_in, autofix], lab_out)
+
+    def _stop():
+        try:
+            import kali_panel as kp
+            import servers
+            host = servers._connections.get(kp.KALI)
+            if host:
+                host.shell_interrupt()
+        except Exception:
+            pass
+        return gr.update()
+    stop_btn.click(_stop, None, lab_out, cancels=[op_evt, run_evt])
 
     # live AI lab actions
     def _make_action(kind):

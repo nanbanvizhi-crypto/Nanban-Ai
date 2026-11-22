@@ -75,6 +75,17 @@ def _port_busy(p: int) -> bool:
         return False
 
 
+def _already_serving(p: int) -> bool:
+    """True if a healthy Nanban is already answering on this port (so we must not
+    start a second one — just reuse it)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{p}/", timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def _pids_on_port(p: int) -> set:
     """PIDs LISTENING on port p (best-effort, per OS)."""
     pids = set()
@@ -204,6 +215,23 @@ def main() -> None:
     # 0. If an older Nanban is still holding the port, replace it so this run serves
     #    the latest code (otherwise the browser keeps showing the old version).
     free_stale_instance(p)
+
+    # 0b. If the port is STILL busy (couldn't stop the old instance, or two launches
+    #     raced — e.g. the login auto-start plus a manual double-click), do NOT crash
+    #     trying to bind it again. If a healthy Nanban is already serving, just open the
+    #     browser to it and exit; otherwise say so clearly and exit cleanly.
+    if _port_busy(p):
+        if _already_serving(p):
+            line(f"   • Nanban is already running at http://127.0.0.1:{p} — opening it in your browser.")
+            if getattr(config, "OPEN_BROWSER_ON_START", True):
+                try:
+                    webbrowser.open(f"http://127.0.0.1:{p}")
+                except Exception:
+                    pass
+        else:
+            line(f"   • Port {p} is in use by another program. Close it (or change WEB_PORT in config.py),")
+            line("     then start Nanban again.")
+        return
 
     # 1. Lab + Kali, in the background (never block the app coming up)
     start_lab_background()

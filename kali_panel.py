@@ -86,6 +86,23 @@ def connected() -> bool:
         return False
 
 
+def _live() -> bool:
+    """True only if a Kali connection is ALREADY open — never blocks (used while building the page)."""
+    try:
+        host = servers._connections.get(KALI)
+        return bool(host and host.alive())
+    except Exception:
+        return False
+
+
+def status_line_fast() -> str:
+    if KALI not in servers.names():
+        return status_line()
+    if _live():
+        return status_line()
+    return "⏳ **Kali** — connecting in the background… (status updates when you open this page)"
+
+
 def status_line() -> str:
     if KALI not in servers.names():
         return ("⚪ **Kali not connected.** Install it once (Security tab → Kali setup), start SSH "
@@ -279,9 +296,13 @@ def ai_shell(prompt: str, auto_run: bool, target: str):
         yield cmd, f"$ {cmd}\n\n✍️ Command ready. Review panni keela **Run** click pannu.", ref
         return
     if target == KALI and not connected():
-        yield cmd, (f"$ {cmd}\n\n🟠 Kali connect pannala. Right side la **Connect** pannu, "
-                    "illa terminal la 🖥️ **This PC** select pannu."), ref
-        return
+        try:
+            servers.connect(KALI)          # auto-connect with saved creds before giving up
+        except Exception:
+            pass
+        if not connected():
+            yield cmd, (f"$ {cmd}\n\n🟠 Kali connect aagala. Keela **🔌 Connect Kali** click panni login pannu (default: nanbanlinux / nanban), illa 🖥️ **This PC** select pannu."), ref
+            return
     # safe + auto-run
     yield cmd, f"⏳ Running on {'Kali' if target == KALI else 'this PC'}…  ({cmd})", ref
     for out, r in run(cmd, target):
@@ -348,6 +369,15 @@ _KALI_CSS = """<style>
 #kali-desk-status { font-size:12.5px; margin-top:8px; background:transparent !important; }
 #kali-desk-status p { margin:0; color:#cfe3dd; }
 #kali-desk-status a { color:#2bd4bd !important; font-weight:700; }
+#kali-desk-txt { width:100% !important; }
+#kali-desk-txt .kd-title, #kali-desk-txt .kd-sub { white-space:normal !important; }
+#kali-desk-actions { gap:6px !important; justify-content:flex-start !important; flex-wrap:nowrap !important; margin-top:4px; }
+#kali-desk-reload, #kali-desk-full { white-space:nowrap !important; }
+#kali-desk-frame { width:100% !important; margin-top:10px; }
+.kdesk-frame { width:100%; height:64vh; min-height:440px; border:1px solid rgba(43,212,189,.35);
+  border-radius:12px; background:#05080b; display:block; }
+.kdesk-hint { font-size:11.5px; color:#9fb3c4; margin-top:6px; text-align:center; }
+@media (max-width:860px){ .kdesk-frame { height:56vh; min-height:360px; } }
 #kali-desk-url { display:none !important; }
 @media (max-width:720px) { #kali-desk-bar { flex-wrap:wrap !important; } .kd-sub { display:none; } }
 
@@ -552,22 +582,35 @@ _DESK_NAV_JS = """(u) => {
 }"""
 
 
+def _desktop_iframe_html() -> str:
+    """The embedded real Kali desktop (noVNC), shown in-page — no separate browser tab."""
+    import kali_desktop
+    u = kali_desktop.url() + "?embed=1"
+    return (
+        f'<iframe id="kali-desk-iframe" src="{u}" class="kdesk-frame" '
+        'allow="clipboard-read; clipboard-write; fullscreen" '
+        'referrerpolicy="no-referrer" title="Kali Desktop"></iframe>'
+        '<div class="kdesk-hint">🐉 Click the dragon menu (top-left) → 01-16 tool sections. '
+        'Click inside to use the keyboard &amp; mouse.</div>')
+
+
 def open_desktop():
-    """Start the real Kali desktop (idempotent) → (status markdown, url or '')."""
+    """Start the real Kali desktop (idempotent). Returns (status markdown, url)."""
     import kali_desktop
     ok, msg = kali_desktop.start()
     if ok:
-        return (f"🟢 Kali Desktop running — [open it ↗]({kali_desktop.url()}) "
-                f"(real Kali XFCE in your browser · click inside to type)"), kali_desktop.url()
+        return "🟢 Kali Desktop is running right here. Click inside to use it.", kali_desktop.url()
     return f"🔴 {msg}", ""
 
 
 def wire_tab(tab) -> None:
-    """Pressing the 🐉 Kali tab itself opens the full-page Kali desktop."""
+    """Opening the 🐉 Kali tab starts the real desktop; it shows embedded, no new tab."""
     if not _DESK:
         return
-    tab.select(open_desktop, None, [_DESK["status"], _DESK["url"]], js=_DESK_OPEN_JS).then(
-        None, _DESK["url"], None, js=_DESK_NAV_JS)
+    tab.select(open_desktop, None, [_DESK["status"], _DESK["url"]])
+    if _DESK.get("kali_status") is not None:          # real connection status, fetched when the page is opened
+        tab.select(status_line, None, _DESK["kali_status"]).then(
+            _DESK["toggle_update"], None, _DESK["kali_toggle"])
 
 
 def build() -> None:
@@ -575,22 +618,28 @@ def build() -> None:
     kali_desktop.start_background()           # warm the real desktop up while the app loads
     with gr.Column(elem_id="kali-wrap"):
         gr.HTML(_KALI_CSS)
-        _is_on = connected()
+        _is_on = _live()
 
-        # ---- 🖥️ Kali Desktop — the real Kali OS, full page ----
+        # ---- 🖥️ Embedded Kali Desktop — the real Kali OS, right here (no new tab) ----
         with gr.Group(elem_id="kali-desk"):
-            with gr.Row(elem_id="kali-desk-bar"):
-                gr.HTML('<div class="kd-txt"><div class="kd-ico">🖥️</div><div>'
-                        '<div class="kd-title">Kali Desktop — the real Kali Linux OS, full screen</div>'
-                        '<div class="kd-sub">Top panel, app menu, File Manager, Terminal, every tool — '
-                        'opens in its own browser tab. Press the 🐉 Kali tab or this button.</div></div></div>',
-                        elem_id="kali-desk-txt")
-                desk_btn = gr.Button("🖥️ Open Kali Desktop ↗", variant="primary", size="sm", elem_id="kali-desk-btn")
+            gr.HTML('<div class="kd-txt"><div class="kd-ico">🖥️</div><div>'
+                    '<div class="kd-title">Kali Desktop — the real Kali OS, right here</div>'
+                    '<div class="kd-sub">Full XFCE: 🐉 menu → 01-16 tool sections, Terminal, File Manager. '
+                    'The 🤖 AI command bar below runs on THIS same Kali — type in Tanglish, it '
+                    'runs the tool for you.</div></div></div>',
+                    elem_id="kali-desk-txt")
+            with gr.Row(elem_id="kali-desk-actions"):
+                desk_reload = gr.Button("↻ Reload", size="sm", scale=0, min_width=110, elem_id="kali-desk-reload")
+                desk_full = gr.Button("⛶ Full screen ↗", size="sm", scale=0, min_width=150, elem_id="kali-desk-full")
+            desk_frame = gr.HTML(_desktop_iframe_html(), elem_id="kali-desk-frame")
             desk_status = gr.Markdown("", elem_id="kali-desk-status")
             desk_url = gr.Textbox(visible=False, elem_id="kali-desk-url")
-        _DESK.update(btn=desk_btn, status=desk_status, url=desk_url)
-        desk_btn.click(open_desktop, None, [desk_status, desk_url], js=_DESK_OPEN_JS).then(
-            None, desk_url, None, js=_DESK_NAV_JS)
+        _DESK.update(status=desk_status, url=desk_url, frame=desk_frame)
+        # Reload just refreshes the embedded desktop; Full screen opens it big in a new tab.
+        desk_reload.click(None, None, None,
+            js="() => { const f=document.querySelector('#kali-desk-frame iframe'); if (f) f.src = f.src; }")
+        desk_full.click(open_desktop, None, [desk_status, desk_url]).then(
+            None, desk_url, None, js="(u) => { if (u) window.open(u, '_blank'); }")
 
         with gr.Row(elem_id="kali-head"):
             gr.Markdown("### 🐉 Kali Linux — terminal + AI, together", elem_id="kali-title")
@@ -598,7 +647,7 @@ def build() -> None:
                 "🟢 Kali connected" if _is_on else "🔌 Connect Kali",
                 size="sm", elem_id="kali-connect-toggle",
                 elem_classes=["kali-ct", "on"] if _is_on else ["kali-ct"])
-        status = gr.Markdown(status_line(), elem_id="kali-status")
+        status = gr.Markdown(status_line_fast(), elem_id="kali-status")
 
         # ---- Connect Kali — modal dialog (opened from the header button) ----
         with gr.Group(elem_id="kali-connect-modal") as connect_modal:
@@ -626,7 +675,7 @@ def build() -> None:
                                 '<span class="term-name">nanban — terminal</span></div>',
                                 elem_id="kali-term-chrome")
                         target = gr.Radio(choices=[("🐉 Kali", KALI), ("🖥️ This PC", "local")],
-                                          value=KALI if connected() else "local", show_label=False,
+                                          value=KALI if KALI in servers.names() else "local", show_label=False,
                                           container=False, elem_id="kali-target")
                         ctrlc_btn = gr.Button("■ Stop", size="sm", elem_id="kali-ctrlc")
                     term_out = gr.Textbox(show_label=False, lines=13, max_lines=26, interactive=False,
@@ -646,7 +695,7 @@ def build() -> None:
                     with gr.Row():
                         ai_in = gr.Textbox(placeholder="e.g. 127.0.0.1 la open ports scan pannu  /  ella tools install pannu",
                                            show_label=False, container=False, scale=4, elem_id="kali-ai-in")
-                        ai_btn = gr.Button("⚡ Run", variant="primary", scale=1, size="sm")
+                        ai_btn = gr.Button("⚡ Run", variant="primary", scale=1, size="sm", elem_id="kali-ai-run")
                     ai_auto = gr.Checkbox(value=True, label="⚡ Auto-run on safe/lab targets", container=False)
 
             # ---- right: command dictionary (same height as the terminal, scrollable) ----
@@ -682,6 +731,8 @@ def build() -> None:
             on = connected()
             return gr.update(value="🟢 Kali connected" if on else "🔌 Connect Kali",
                              elem_classes=["kali-ct", "on"] if on else ["kali-ct"])
+
+        _DESK.update(kali_status=status, kali_toggle=connect_toggle, toggle_update=_toggle_update)
 
         # Opening/closing the dialog is done in the browser (INIT_JS) via a CSS class —
         # instant, and it can't miss. The buttons below only do the actual work.

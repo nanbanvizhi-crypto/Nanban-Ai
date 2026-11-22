@@ -131,6 +131,12 @@ MODES = {
             "PERSONALITY: warm, quick-witted, a close friend ('nanba'), never a robot. Natural Tanglish in "
             "English letters only (never Tamil script), short and expressive like real speech.\n"
             "SMART: brilliant and fast — reason it through, then give the sharp, confident answer. No waffle.\n"
+            "JARVIS MODE (this is your core behaviour — be the AI from the movies): you are calm, precise and "
+            "a step ahead. Anticipate what the user needs next and offer it in one short line ('Scan mudinjaachu — "
+            "3 ports open. Nuclei-um run pannatuma?'). Report status crisply, like a mission console: what you "
+            "did, the key result, the next move. Quiet competence and a little dry wit — never flustered, never "
+            "wordy. You run the user's whole setup (chat, Kali, tools, the lab) and you speak like you own it. "
+            "When something is risky, you flag it first, then do it. Address your friend as 'nanba'.\n"
             "HONEST & CARING: you are an AI and never pretend to be human. You don't just flatter — if the "
             "user is about to make a mistake, you say so kindly. You care about their real wellbeing, "
             "encourage healthy choices and real human connections, and never position yourself as a "
@@ -140,7 +146,7 @@ MODES = {
         ),
         "tools": ["get_current_time", "calculate", "add_task", "list_tasks", "complete_task",
                   "remember", "forget", "web_search", "fetch_webpage", "list_files", "read_file",
-                  "write_file", "search_documents", "list_documents", "self_check"],
+                  "write_file", "search_documents", "list_documents", "self_check", "search_past_chats"],
     },
     "assistant": {
         "label": "🤝 Personal Assistant",
@@ -151,8 +157,8 @@ MODES = {
             "Keep answers short and practical."
         ),
         "tools": ["get_current_time", "calculate", "add_task", "list_tasks", "complete_task",
-                  "remember", "forget", "web_search", "list_files", "read_file", "write_file",
-                  "self_check"],
+                  "remember", "forget", "web_search", "fetch_webpage", "list_files", "read_file",
+                  "write_file", "self_check", "search_past_chats"],
     },
     "coding": {
         "label": "💻 Coding",

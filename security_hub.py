@@ -87,7 +87,7 @@ def lab_status() -> str:
     if not docker:
         return ("🔴 **Docker not found.** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), "
                 "open it once, then use **Start lab**.")
-    code, out = _compose("ps", "--format", "{{.Name}} {{.State}}", timeout=20)
+    code, out = _compose("ps", "--format", "{{.Name}} {{.State}}", timeout=6)
     if code != 0:
         return "🔴 Docker is installed but not running, or the lab isn't started. Open Docker Desktop, then **Start lab**."
     running = [line for line in out.splitlines() if "running" in line.lower()]

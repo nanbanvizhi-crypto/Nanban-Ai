@@ -36,12 +36,12 @@ PROVIDERS = {
     "📦 Portable (bundled) — zero install, no Ollama": {"backend": "portable"},
     "🆓 Local (Ollama) — free & private": {"backend": "local"},
     "🆓 Groq — free & fast": {
-        "backend": "hosted", "base": "https://api.groq.com/openai/v1", "model": "openai/gpt-oss-20b"},
+        "backend": "hosted", "base": "https://api.groq.com/openai/v1", "model": "openai/gpt-oss-120b"},
     "🆓 Google Gemini — free tier": {
         "backend": "hosted", "base": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "model": "gemini-2.0-flash"},
     "🆓 Cerebras — free, very fast 70B": {
-        "backend": "hosted", "base": "https://api.cerebras.ai/v1", "model": "llama-3.3-70b"},
+        "backend": "hosted", "base": "https://api.cerebras.ai/v1", "model": "gpt-oss-120b"},
     "🆓 OpenRouter — free models only": {
         "backend": "hosted", "base": "https://openrouter.ai/api/v1",
         "model": "meta-llama/llama-3.3-70b-instruct:free"},

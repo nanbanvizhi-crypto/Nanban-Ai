@@ -20,6 +20,8 @@
   #bar button:hover { background:#1b2531; border-color:#2f4256; }
   #bar button.acc { background:var(--acc); color:#06211e; border-color:var(--acc); font-weight:600; }
   #screen { position:fixed; inset:36px 0 0 0; background:#000; }
+  body.embed #bar, body.embed #peek { display:none !important; }
+  body.embed #screen, body.embed #overlay { inset:0 !important; }
   body.fs #bar { transform:translateY(-36px); transition:transform .2s; }
   body.fs #screen { inset:0; }
   #peek { position:fixed; top:0; left:0; right:0; height:6px; z-index:11; display:none; }
@@ -62,6 +64,7 @@
   import RFB from './core/rfb.js';
 
   const $ = (s) => document.querySelector(s);
+  if (new URLSearchParams(location.search).has('embed')) document.body.classList.add('embed');
   const st = $('#st'), stt = $('#stt'), overlay = $('#overlay'), omsg = $('#omsg'), ospin = $('#ospin');
   const PASS = 'nanban';
   const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/websockify';
@@ -82,6 +85,8 @@
     rfb.clipViewport = false;
     rfb.showDotCursor = true;
     rfb.background = '#000';
+    rfb.compressionLevel = 0;      // local link: no CPU spent on zlib -> snappier
+    rfb.qualityLevel = 8;          // sharp text
     rfb.addEventListener('connect', () => {
       tries = 0; setStatus('on', 'connected'); overlay.classList.add('hide'); rfb.focus();
     });

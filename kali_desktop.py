@@ -213,9 +213,28 @@ def arsenal_done() -> bool:
     return code == 0
 
 
+_watchdog_on = False
+
+
+def _watchdog() -> None:
+    """Keep the desktop alive for as long as Nanban runs: after the laptop sleeps or WSL is
+    restarted the VNC session is gone — notice within a minute and start it again."""
+    while True:
+        time.sleep(45)
+        try:
+            if available() and not _page_up(timeout=3):
+                start(wait=90)
+        except Exception:
+            pass
+
+
 def start_background() -> None:
-    """Warm the desktop up without blocking (used at app start)."""
-    threading.Thread(target=lambda: start(wait=60), daemon=True).start()
+    """Warm the desktop up without blocking (used at app start) and keep it up."""
+    global _watchdog_on
+    threading.Thread(target=lambda: start(wait=90), daemon=True).start()
+    if not _watchdog_on:
+        _watchdog_on = True
+        threading.Thread(target=_watchdog, daemon=True).start()
 
 
 if __name__ == "__main__":

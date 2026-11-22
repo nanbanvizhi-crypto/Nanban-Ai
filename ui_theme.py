@@ -540,4 +540,375 @@ h1, h2, h3, h4 { letter-spacing: -.02em; }
 .dark .tabs .tab-container button[role="tab"].selected, .dark .tabs [role="tab"].selected { color: #141514 !important; }
 #term-shell .wrap label.selected, #term-shell label.selected {
   background: var(--nb-accent-bright) !important; color: #141514 !important; border-color: var(--nb-accent-bright) !important; }
+
+/* ============================ UI v2 — clean-up layer ============================ */
+/* Status badges used to float over the tab bar; the same info is in the sidebar footer. */
+.block:has(> #topbar), .block:has(#topbar) { display: none !important; }
+
+/* Tab bar: one tidy row that scrolls instead of clipping */
+.tabs .tab-container { flex-wrap: nowrap !important; overflow-x: auto !important; scrollbar-width: none; }
+.tabs .tab-container::-webkit-scrollbar { display: none; }
+.tabs [role="tab"] { white-space: nowrap; flex: 0 0 auto; }
+
+/* Chat: centred reading column, like modern chat apps */
+#chat-col { max-width: 900px !important; margin: 0 auto !important; }
+#chat .message-wrap { gap: 10px !important; }
+#chat .bot .prose, #chat .bot.message { font-size: 15.5px; line-height: 1.62; }
+#chat pre { border-radius: 12px !important; }
+
+/* Mode description + reply language share one slim line */
+#mode-row { align-items: center !important; flex-wrap: nowrap !important; gap: 10px !important; margin-top: -4px; }
+#mode-row > div:has(#mode-info), #mode-row > #mode-info { flex: 1 1 auto !important; min-width: 0 !important; }
+#mode-info { margin: 0 !important; }
+#reply-lang { flex: 0 0 176px !important; min-width: 176px !important; max-width: 176px !important;
+  border: 1px solid var(--border-color-primary) !important; border-radius: 999px !important;
+  padding: 0 4px !important; background: var(--block-background-fill) !important; overflow: visible !important; }
+#reply-lang .wrap, #reply-lang .wrap-inner, #reply-lang .secondary-wrap { border: none !important; box-shadow: none !important;
+  background: transparent !important; min-height: 30px !important; }
+#reply-lang input { font-size: 12.5px !important; height: 30px !important; padding: 0 8px !important; font-weight: 600; }
+#reply-lang .info, #reply-lang [data-testid="block-info"] { display: none !important; }
+
+/* Image upload: tucked away behind the paperclip until needed */
+#img-in { display: none !important; }
+body.nb-attach #img-in { display: block !important; }
+#composer-row { align-items: flex-end !important; gap: 8px !important; flex-wrap: nowrap !important; }
+#composer-row > div:has(textarea), #composer-row > .block { flex: 1 1 auto !important; min-width: 0 !important; }
+#attach-btn { flex: 0 0 44px !important; min-width: 44px !important; width: 44px !important; height: 44px !important;
+  border-radius: 50% !important; padding: 0 !important; font-size: 18px !important; margin-bottom: 6px;
+  border: 1px solid var(--border-color-primary) !important; background: var(--block-background-fill) !important; }
+body.nb-attach #attach-btn { border-color: var(--nb-accent, #b7e23c) !important; }
+#examples { opacity: .9; }
+
+/* Floating voice tools: smaller and out of the way */
+#nb-tools { right: 12px !important; bottom: 92px !important; gap: 6px !important; }
+#nb-tools button { width: 36px !important; height: 36px !important; font-size: 15px !important; }
+#nb-tools #nb-vizhi { width: 50px !important; height: 50px !important; font-size: 22px !important; }
+
+/* ---------------- Kali tab: one clean surface, big desktop ---------------- */
+#kali-wrap { max-width: none !important; }
+#kali-desk { position: relative; border: none !important; padding: 0 !important; margin: 0 0 8px !important;
+  background: transparent !important; box-shadow: none !important; }
+#kali-desk > .styler, #kali-desk .styler { background: transparent !important; border: none !important; box-shadow: none !important; }
+#kali-desk-txt { padding: 2px 2px 6px !important; }
+#kali-desk-txt .kd-ico { font-size: 20px !important; }
+#kali-desk-txt .kd-title { font-size: 14px !important; }
+#kali-desk-txt .kd-sub { display: none !important; }
+#kali-desk-actions { position: absolute !important; right: 0; top: -4px; width: auto !important; margin: 0 !important;
+  gap: 6px !important; background: transparent !important; z-index: 3; }
+#kali-desk-reload, #kali-desk-full { min-height: 30px !important; height: 30px !important; font-size: 12px !important;
+  border-radius: 8px !important; padding: 0 12px !important; }
+#kali-desk-frame { margin-top: 0 !important; padding: 0 !important; }
+.kdesk-frame { height: calc(100dvh - 168px) !important; min-height: 500px !important; border-radius: 12px !important;
+  border: 1px solid rgba(43,212,189,.35) !important; }
+.kdesk-hint { display: none !important; }
+#kali-desk-status { margin: 4px 2px 0 !important; font-size: 12px !important; opacity: .8; }
+@media (max-width: 860px) { .kdesk-frame { height: 62dvh !important; min-height: 380px !important; } }
+
+/* v2 nits */
+#reply-lang { height: 34px !important; min-height: 34px !important; padding: 0 2px !important; align-self: center !important; }
+#reply-lang > *, #reply-lang .container, #reply-lang label { padding: 0 !important; margin: 0 !important; min-height: 0 !important; }
+#reply-lang .wrap { min-height: 32px !important; height: 32px !important; padding: 0 6px !important; }
+#kali-desk-actions { right: 2px !important; top: -2px !important; width: max-content !important; max-width: 60% !important;
+  flex-wrap: nowrap !important; justify-content: flex-end !important; }
+#kali-desk-actions > * { flex: 0 0 auto !important; }
+#kali-desk-reload, #kali-desk-full { min-width: max-content !important; white-space: nowrap !important; }
+
+/* =====================================================================================
+   UI v3 — "NEXUS" look: left navigation, glass panels, neon teal→violet accent, mono HUD
+   ===================================================================================== */
+:root, .gradio-container {
+  --nx-a: #0fb5a6; --nx-b: #6d5cf5; --nx-line: rgba(30,45,90,.13); --nx-panel: rgba(255,255,255,.72);
+  --nx-solid: #ffffff; --nx-side: rgba(250,251,253,.9); --nx-dim: #6b7487; --nx-hover: rgba(40,60,120,.06);
+  --nx-mono: "JetBrains Mono", "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+.dark, .dark .gradio-container, body.dark {
+  --nx-a: #2ee6d6; --nx-b: #7c6cff; --nx-line: rgba(125,160,255,.14); --nx-panel: rgba(13,19,34,.66);
+  --nx-solid: #0b1120; --nx-side: rgba(7,11,21,.9); --nx-dim: #8b98b3; --nx-hover: rgba(125,160,255,.08);
+  --body-background-fill: #060912 !important; --background-fill-primary: #0a101d !important;
+  --background-fill-secondary: #0c1322 !important; --block-background-fill: #0c1322 !important;
+  --block-border-color: rgba(125,160,255,.14) !important; --border-color-primary: rgba(125,160,255,.14) !important;
+  --input-background-fill: #0a1020 !important; --input-border-color: rgba(125,160,255,.18) !important;
+  --body-text-color: #e6edf7 !important; --body-text-color-subdued: #8b98b3 !important;
+  --block-label-text-color: #9fb0cc !important; --block-title-text-color: #cfdaf0 !important;
+  --button-secondary-background-fill: #111a2d !important; --button-secondary-background-fill-hover: #17223a !important;
+  --button-secondary-border-color: rgba(125,160,255,.18) !important; --button-secondary-text-color: #dbe6f7 !important;
+  --button-primary-background-fill: linear-gradient(135deg, #2ee6d6, #7c6cff) !important;
+  --button-primary-background-fill-hover: linear-gradient(135deg, #63f1e5, #978bff) !important;
+  --button-primary-text-color: #04121a !important; --button-primary-border-color: transparent !important;
+  --color-accent: #2ee6d6 !important; --color-accent-soft: rgba(46,230,214,.12) !important;
+  --nb-accent: #2ee6d6; --nb-accent-bright: #2ee6d6; --nb-ink: #e6edf7; --nb-user-bg: rgba(124,108,255,.18);
+  --code-background-fill: #070b15 !important; --table-even-background-fill: #0c1322 !important;
+  --table-odd-background-fill: #0a101d !important; --panel-background-fill: #0c1322 !important;
+}
+
+/* deep-space canvas with a faint engineering grid */
+.dark .gradio-container, body.dark, .dark gradio-app {
+  background:
+    radial-gradient(900px 520px at 88% -8%, rgba(124,108,255,.17), transparent 62%),
+    radial-gradient(760px 520px at -6% 106%, rgba(46,230,214,.12), transparent 62%),
+    linear-gradient(rgba(125,160,255,.034) 1px, transparent 1px) 0 0 / 100% 38px,
+    linear-gradient(90deg, rgba(125,160,255,.034) 1px, transparent 1px) 0 0 / 38px 100%,
+    #060912 !important;
+  background-attachment: fixed !important;
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(125,160,255,.28) transparent; }
+::selection { background: rgba(46,230,214,.3); }
+
+/* ---------- no menus on top: the tab bars live off-screen, the sidebar drives them ---------- */
+.tabs > .tab-wrapper { position: absolute !important; left: -12000px !important; top: 0 !important; width: 5000px !important;
+  height: 1px !important; overflow: hidden !important; opacity: 0 !important; pointer-events: none !important; margin: 0 !important; }
+#modes, .block:has(> #modes) { display: none !important; }
+#hist-pick, #hist-go, .block:has(> #hist-pick) { display: none !important; }
+#viz-in, #viz-go, #viz-out, #viz-say, .block:has(> #viz-in), .block:has(> #viz-out), .block:has(> #viz-say) { display: none !important; }
+
+/* ---------- sidebar ---------- */
+.sidebar-parent .sidebar { background: var(--nx-side) !important; border-right: 1px solid var(--nx-line) !important;
+  backdrop-filter: blur(16px) saturate(1.2); }
+.sidebar .sidebar-content { overflow-y: auto !important; padding: 16px 12px 12px !important; }
+.sidebar .sidebar-content > .column { gap: 2px !important; }
+.sidebar .block:has(.nb-sec-title), .sidebar .block:has(#nb-hist), #nb-nav-wrap, #nb-hist-wrap, #nb-hist-head, #nb-ws-head {
+  border: none !important; background: transparent !important; padding: 0 !important; margin: 0 !important;
+  box-shadow: none !important; min-height: 0 !important; overflow: visible !important; }
+#brand .name { font-family: var(--nx-mono) !important; letter-spacing: .14em; text-transform: uppercase; font-size: 15px !important;
+  background: linear-gradient(90deg, var(--nx-a), var(--nx-b)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+#brand .sub { font-family: var(--nx-mono); font-size: 10.5px !important; letter-spacing: .06em; color: var(--nx-dim) !important; }
+#brand img { box-shadow: 0 0 0 1px rgba(46,230,214,.35), 0 6px 22px rgba(46,230,214,.22) !important; }
+#new-chat { height: 40px !important; border-radius: 12px !important; font-family: var(--nx-mono) !important; font-size: 12.5px !important;
+  letter-spacing: .06em; border: 1px solid transparent !important; color: var(--body-text-color) !important;
+  background: linear-gradient(var(--nx-solid), var(--nx-solid)) padding-box,
+              linear-gradient(120deg, var(--nx-a), var(--nx-b)) border-box !important;
+  transition: box-shadow .2s, transform .12s; margin-bottom: 4px; }
+#new-chat:hover { box-shadow: 0 0 22px rgba(46,230,214,.22); transform: translateY(-1px); }
+.nb-sec-title { font: 600 10px var(--nx-mono); letter-spacing: .2em; color: var(--nx-dim); padding: 14px 8px 6px;
+  display: flex; justify-content: space-between; align-items: center; text-transform: uppercase; }
+.nb-sec-title span { letter-spacing: .08em; opacity: .7; text-transform: none; }
+
+#nb-nav { display: flex; flex-direction: column; gap: 2px; }
+.nbn-item { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+  cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--body-text-color); user-select: none;
+  transition: background .15s, box-shadow .15s, transform .12s; }
+.nbn-item:hover { background: var(--nx-hover); transform: translateX(2px); }
+.nbn-item.active { background: linear-gradient(90deg, rgba(46,230,214,.16), rgba(124,108,255,.07));
+  box-shadow: inset 0 0 0 1px rgba(46,230,214,.26); }
+.nbn-item.active::before { content: ""; position: absolute; left: -7px; top: 9px; bottom: 9px; width: 3px; border-radius: 3px;
+  background: linear-gradient(var(--nx-a), var(--nx-b)); box-shadow: 0 0 12px var(--nx-a); }
+.nbn-ico { width: 20px; text-align: center; font-size: 15px; line-height: 1; filter: saturate(.9); }
+.nbn-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nbn-chev { margin-left: auto; font-size: 11px; opacity: .5; padding: 3px 5px; border-radius: 6px; transition: transform .2s, opacity .15s; }
+.nbn-chev:hover { opacity: 1; background: var(--nx-hover); }
+.nbn-item.open .nbn-chev { transform: rotate(180deg); }
+.nbn-sub { display: none; margin: 2px 0 6px 19px; padding-left: 9px; border-left: 1px dashed var(--nx-line); }
+.nbn-sub.open { display: block; animation: nbIn .2s ease both; }
+.nbn-subitem { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 12.5px;
+  color: var(--nx-dim); cursor: pointer; transition: background .15s, color .15s; }
+.nbn-subitem:hover { color: var(--body-text-color); background: var(--nx-hover); }
+.nbn-subitem.active { color: var(--nx-a); background: rgba(46,230,214,.09); font-weight: 600; }
+.nbn-sico { width: 16px; text-align: center; font-size: 12.5px; }
+
+#nb-hist { max-height: 26vh; overflow-y: auto; padding-right: 2px; }
+.nbh-group { font: 600 9.5px var(--nx-mono); letter-spacing: .14em; color: var(--nx-dim); padding: 8px 8px 3px; text-transform: uppercase; opacity: .75; }
+.nbh-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
+  color: var(--body-text-color); opacity: .84; transition: background .15s, opacity .15s; }
+.nbh-item:hover { background: var(--nx-hover); opacity: 1; }
+.nbh-item.active { background: rgba(124,108,255,.15); box-shadow: inset 0 0 0 1px rgba(124,108,255,.3); opacity: 1; }
+.nbh-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nbh-del { opacity: 0; font-size: 10.5px; padding: 2px 6px; border-radius: 6px; transition: opacity .15s, background .15s; }
+.nbh-item:hover .nbh-del { opacity: .55; }
+.nbh-del:hover { opacity: 1 !important; background: rgba(255,90,90,.18); color: #ff8f8f; }
+.nbh-empty { font-size: 12px; color: var(--nx-dim); padding: 4px 8px 8px; line-height: 1.5; }
+
+.sidebar .gr-accordion > .label-wrap { font-size: 13px !important; border-radius: 10px !important; }
+#status { font-family: var(--nx-mono) !important; font-size: 10.5px !important; letter-spacing: .02em; }
+#status code { background: rgba(46,230,214,.08) !important; color: var(--nx-a) !important; border: 1px solid rgba(46,230,214,.2); border-radius: 6px; }
+
+/* ---------- chat ---------- */
+.tabitem { padding-top: 6px !important; }
+#chat-col { max-width: 920px !important; gap: 10px !important; }
+#mode-row { padding: 7px 8px 7px 12px !important; border: 1px solid var(--nx-line) !important; border-radius: 14px !important;
+  background: var(--nx-panel) !important; backdrop-filter: blur(12px); margin: 0 !important; }
+#mode-info p { margin: 0 !important; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.nb-mode-chip { font: 600 11.5px var(--nx-mono); letter-spacing: .04em; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+  color: var(--nx-a); background: rgba(46,230,214,.1); border: 1px solid rgba(46,230,214,.26); }
+.nb-mode-about { color: var(--nx-dim); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#reply-lang { font-family: var(--nx-mono) !important; background: var(--nx-solid) !important; border-color: var(--nx-line) !important; }
+#reply-lang input { font-family: var(--nx-mono) !important; font-size: 11.5px !important; }
+
+@keyframes nbIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes nbFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+#chat .message-row { animation: nbIn .26s ease both; }
+#chat .bot-row .bot { position: relative; padding: 2px 0 2px 18px !important; }
+#chat .bot-row .bot::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px;
+  background: linear-gradient(var(--nx-a), var(--nx-b)); opacity: .8; }
+#chat .user.message, #chat .user { border-radius: 16px 16px 4px 16px !important; padding: 10px 15px !important; }
+.dark #chat .user.message, .dark #chat .user {
+  background: linear-gradient(135deg, rgba(124,108,255,.24), rgba(46,230,214,.12)) !important;
+  border: 1px solid rgba(124,108,255,.36) !important; box-shadow: 0 8px 26px rgba(124,108,255,.13); }
+#chat pre { background: #070b15 !important; border: 1px solid var(--nx-line) !important; border-radius: 12px !important; }
+#chat pre code, #chat code { font-family: var(--nx-mono) !important; font-size: 12.8px !important; }
+#chat .bot :not(pre) > code { color: var(--nx-a) !important; background: rgba(46,230,214,.09) !important;
+  border: 1px solid rgba(46,230,214,.18); border-radius: 6px; padding: 1px 6px; }
+#chat .bot a { color: var(--nx-a) !important; }
+#chat .bot table { border: 1px solid var(--nx-line) !important; border-radius: 10px; overflow: hidden; }
+#chat .message-buttons button, #chat .icon-button { opacity: .45; transition: opacity .15s; }
+#chat .message-buttons:hover button, #chat .icon-button:hover { opacity: 1; }
+
+/* empty state */
+.nb-hero { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 7vh 0 2vh; text-align: center; }
+.nb-hero-orb { width: 86px; height: 86px; border-radius: 26px; display: grid; place-items: center; color: #04121a;
+  font: 800 30px var(--nx-mono); background: linear-gradient(135deg, var(--nx-a), var(--nx-b));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 18px 60px rgba(46,230,214,.3), 0 0 90px rgba(124,108,255,.28);
+  animation: nbFloat 5s ease-in-out infinite; }
+.nb-hero-title { font: 800 30px/1 var(--nx-mono); letter-spacing: .34em; padding-left: .34em;
+  background: linear-gradient(90deg, var(--nx-a), var(--nx-b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nb-hero-sub { color: var(--nx-dim); font-size: 14.5px; }
+.nb-hero-stats { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.nb-hero-stats span { font: 500 10.5px var(--nx-mono); letter-spacing: .06em; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--nx-line); color: var(--nx-dim); background: var(--nx-panel); }
+.nb-hero-stats span:first-child { color: var(--nx-a); border-color: rgba(46,230,214,.3); }
+
+/* composer: glass capsule with a neon edge */
+.dark #composer { background: linear-gradient(to bottom, transparent, rgba(6,9,18,.92) 42%) !important; }
+#composer-row > div:has(textarea), #composer-row > .block { border-radius: 18px !important; border: 1px solid transparent !important;
+  background: linear-gradient(var(--nx-solid), var(--nx-solid)) padding-box,
+              linear-gradient(120deg, rgba(46,230,214,.6), rgba(124,108,255,.6)) border-box !important;
+  box-shadow: 0 12px 44px rgba(0,0,0,.28); transition: box-shadow .25s; }
+#composer-row > div:has(textarea):focus-within { box-shadow: 0 12px 44px rgba(0,0,0,.3), 0 0 30px rgba(46,230,214,.2); }
+#composer textarea { font-size: 15px !important; }
+#composer textarea::placeholder { font-family: var(--nx-mono); font-size: 12.5px; opacity: .55; letter-spacing: .02em; }
+#composer .submit-button { background: linear-gradient(135deg, var(--nx-a), var(--nx-b)) !important; color: #04121a !important;
+  box-shadow: 0 4px 18px rgba(46,230,214,.36); border: none !important; }
+#composer .submit-button:hover { background: linear-gradient(135deg, #63f1e5, #978bff) !important; transform: translateY(-1px) scale(1.04); }
+#attach-btn { background: var(--nx-panel) !important; border: 1px solid var(--nx-line) !important; backdrop-filter: blur(8px);
+  transition: border-color .15s, box-shadow .15s; }
+#attach-btn:hover { border-color: var(--nx-a) !important; box-shadow: 0 0 16px rgba(46,230,214,.2); }
+#examples button, #examples .gallery-item { border-radius: 999px !important; border: 1px solid var(--nx-line) !important;
+  background: var(--nx-panel) !important; font-size: 12px !important; color: var(--nx-dim) !important; transition: all .15s; }
+#examples button:hover, #examples .gallery-item:hover { color: var(--body-text-color) !important; border-color: rgba(46,230,214,.4) !important; }
+
+/* floating voice tools */
+#nb-tools button { background: var(--nx-panel) !important; border: 1px solid var(--nx-line) !important; backdrop-filter: blur(8px); }
+#nb-tools #nb-vizhi { box-shadow: 0 0 0 1px rgba(46,230,214,.4), 0 8px 30px rgba(46,230,214,.3) !important; }
+
+/* generic surfaces in the other sections pick up the same glass language */
+.dark .block { border-color: var(--nx-line); }
+.dark input:focus, .dark textarea:focus { border-color: rgba(46,230,214,.5) !important; }
+.dark button.primary, .dark .primary.svelte-xzq5jh { font-weight: 700 !important; }
+.dark .tabitem h1, .dark .tabitem h2, .dark .tabitem h3 { letter-spacing: -.01em; }
+
+/* v3 nits */
+#brand .name, .nb-hero-title { background: none !important; -webkit-text-fill-color: currentColor !important;
+  color: var(--nx-a) !important; text-shadow: 0 0 22px rgba(46,230,214,.45); }
+.nb-hero-title { font-size: 28px !important; }
+#composer #composer-row > .block, #composer #composer-row > div:has(textarea) {
+  border-radius: 18px !important; border: 1px solid transparent !important;
+  background: linear-gradient(var(--nx-solid), var(--nx-solid)) padding-box,
+              linear-gradient(120deg, rgba(46,230,214,.6), rgba(124,108,255,.6)) border-box !important; }
+#composer #composer-row .input-container, #composer #composer-row label, #composer #composer-row textarea {
+  background: transparent !important; }
+#reply-lang .icon-wrap, #reply-lang svg { right: 8px !important; }
+
+/* =====================================================================================
+   UI v4 — alignment / spacing fixes found in the full-page audit of every section
+   ===================================================================================== */
+/* 1. Chat: replies were wider than their column (padding on top of width:100%) and got cut off on the right */
+#chat .message-row, #chat .bot-row .flex-wrap, #chat .bot-row .bot { box-sizing: border-box !important; max-width: 100% !important; min-width: 0 !important; }
+#chat .bot-row .bot { width: 100% !important; }
+#chat .bot .message, #chat .bot .message-content, #chat .bot .prose, #chat .bot .md {
+  max-width: 100% !important; min-width: 0 !important; overflow-wrap: anywhere; box-sizing: border-box !important; }
+#chat pre { max-width: 100% !important; overflow-x: auto !important; white-space: pre; }
+#chat .bot table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+#chat .bot th, #chat .bot td { padding: 7px 12px !important; border-color: var(--nx-line) !important; }
+#chat .bot th { background: rgba(46,230,214,.07) !important; font-family: var(--nx-mono); font-size: 12px; letter-spacing: .03em; }
+#chat .bot hr { border: none !important; border-top: 1px solid var(--nx-line) !important; margin: 14px 0 !important; }
+#chat .bot ol, #chat .bot ul { padding-left: 22px !important; }
+#chat .bot li { margin: 4px 0 !important; }
+/* 2. Chat fills the window now that the top bars are gone (was leaving ~200px empty at the bottom) */
+#chat { height: calc(100dvh - 232px) !important; min-height: 300px !important; }
+/* 3. The floating voice buttons must never sit on top of page content */
+.tabitem > .column { padding-right: 60px !important; box-sizing: border-box !important; }
+@media (max-width: 900px) { .tabitem > .column { padding-right: 0 !important; } }
+
+/* 4. Sidebar: one type scale + one left edge for every row */
+.sidebar .gr-accordion > .label-wrap { padding: 8px 10px !important; min-height: 0 !important; }
+.sidebar .gr-accordion > .label-wrap > span, .sidebar .gr-accordion > .label-wrap span:first-child {
+  font-size: 13.5px !important; font-weight: 600 !important; }
+.sidebar .gr-accordion { margin: 0 !important; }
+#status { padding: 10px 8px 0 !important; }
+#status p { line-height: 1.95 !important; }
+#status code { font-size: 9.5px !important; padding: 1px 5px !important; white-space: nowrap; letter-spacing: 0; }
+
+/* 5. Cards (Security / Admin / India Lab): Gradio paints a Group's backdrop with the border colour,
+      which showed as a slate box with text glued to its edge */
+.dark .gr-group, .dark .gr-group > .styler, .dark .admin-card > .styler { background: transparent !important; }
+.admin-card { padding: 16px 18px !important; border-radius: 16px !important; background: var(--nx-panel) !important;
+  border: 1px solid var(--nx-line) !important; }
+.admin-card > .styler { display: flex !important; flex-direction: column !important; gap: 10px !important; }
+.admin-card .row { gap: 8px !important; }
+.admin-card h4 { font-size: 14.5px !important; margin: 0 0 2px !important; }
+#lesson-reader { padding: 4px 2px 2px !important; }
+#lesson-reader h1 { font-size: 1.45rem !important; line-height: 1.25 !important; margin: 10px 0 8px !important; }
+#lesson-reader h2 { font-size: 1.12rem !important; margin: 16px 0 6px !important; color: var(--nx-a); }
+
+/* 6. Buttons inside sections were flat, square and ~20px tall */
+.tabitem button.primary, .tabitem button.secondary, .tabitem button.stop {
+  border-radius: 10px !important; min-height: 36px !important; }
+.tabitem .row:has(> button) { gap: 8px !important; }
+#kali-power-btns { gap: 8px !important; }
+
+/* 7. Kali: AI Shell row — input and Run button on one baseline */
+#kali-ai .row { align-items: center !important; gap: 8px !important; }
+#kali-ai-run { min-height: 40px !important; height: 40px !important; align-self: center !important; }
+
+/* 8. Terminal: same glass + navy language as the rest (was a grey card from the old theme) */
+.dark #term-card { background: var(--nx-panel) !important; border: 1px solid var(--nx-line) !important; backdrop-filter: blur(10px); }
+.dark #term-out textarea { background: #05080f !important; border: 1px solid var(--nx-line) !important; }
+.dark #term-in textarea, .dark #term-in input { background: #0a1020 !important; border: 1px solid var(--nx-line) !important; border-radius: 10px !important; }
+.dark #term-cwd code { background: rgba(46,230,214,.08) !important; color: var(--nx-a) !important; }
+.dark #term-card #explain-btn { background: #111a2d !important; border: 1px solid var(--nx-line) !important; color: #dbe6f7 !important; }
+
+/* 9. Images: prompt box edge matches the theme */
+#img-prompt textarea { border: 1px solid var(--nx-line) !important; box-shadow: none !important; border-radius: 12px !important; }
+#img-prompt textarea:focus { border-color: rgba(46,230,214,.5) !important; }
+
+/* 10. India Lab hero was a white card with washed-out text in the dark theme */
+.dark .il-hero { background: linear-gradient(135deg, rgba(46,230,214,.10), rgba(124,108,255,.13)), #0c1322 !important;
+  border: 1px solid var(--nx-line) !important; color: #e6edf7 !important; box-shadow: 0 18px 60px rgba(0,0,0,.35) !important; }
+.dark .il-hero h1 { color: #eef3fb !important; }
+.dark .il-hero p { color: #a9b8d2 !important; }
+.dark .il-hero p b, .dark .il-hero p strong, .dark .il-hero p span, .dark .il-hero p em { color: var(--nx-a) !important; background: none !important; }
+.dark .il-hero .il-safe { color: #f2cd92 !important; background: rgba(255,176,138,.09) !important; border-color: rgba(255,176,138,.28) !important; }
+.dark .il-hero-badge { color: var(--nx-a) !important; background: rgba(46,230,214,.10) !important; border: 1px solid rgba(46,230,214,.3) !important; }
+
+/* ===================== UI v5 — India Lab LIVE ARSENAL ===================== */
+#il-arsenal { border: 1px solid rgba(46,230,214,.3) !important; border-radius: 16px !important; padding: 14px 16px !important;
+  background: linear-gradient(135deg, rgba(46,230,214,.07), rgba(124,108,255,.09)), var(--nx-panel, #0c1322) !important;
+  margin: 8px 0 14px !important; box-shadow: 0 10px 40px rgba(0,0,0,.28); }
+.il-ars-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.il-ars-t { font: 800 15px/1 var(--nx-mono, monospace); letter-spacing: .02em; color: #2ee6d6 !important; text-shadow: 0 0 18px rgba(46,230,214,.4); }
+.il-ars-live { font: 700 10px var(--nx-mono, monospace); letter-spacing: .12em; color: #2ee6d6;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(46,230,214,.4); background: rgba(46,230,214,.08); animation: ilpulse 2s infinite; }
+@keyframes ilpulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+#il-top10 { gap: 7px !important; flex-wrap: wrap !important; }
+#il-top10 .il-toolbtn { flex: 0 0 auto !important; min-width: max-content !important; border-radius: 10px !important;
+  min-height: 34px !important; font-size: 12.5px !important; font-weight: 600 !important; white-space: nowrap;
+  background: rgba(10,16,32,.7) !important; border: 1px solid rgba(46,230,214,.22) !important; color: #dbe6f7 !important;
+  transition: all .14s; }
+#il-top10 .il-toolbtn:hover { border-color: var(--nx-a, #2ee6d6) !important; transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(46,230,214,.22); color: #fff !important; }
+#il-domtools { margin-top: 2px !important; }
+#il-oprow { gap: 8px !important; margin-top: 10px !important; align-items: center !important; }
+#il-op-in textarea { border: 1px solid rgba(124,108,255,.35) !important; border-radius: 11px !important; background: rgba(8,12,24,.8) !important; font-size: 13.5px !important; }
+#il-op-run { min-height: 40px !important; height: 40px !important; align-self: center !important; border-radius: 11px !important;
+  background: linear-gradient(135deg, var(--nx-a, #2ee6d6), var(--nx-b, #7c6cff)) !important; color: #04121a !important; font-weight: 800 !important; border: none !important; }
+#il-labout { margin-top: 10px !important; }
+#il-labout textarea { font-family: var(--nx-mono, monospace) !important; font-size: 12.5px !important; line-height: 1.55 !important;
+  background: #05080f !important; color: #c8ffe8 !important; border: 1px solid rgba(46,230,214,.22) !important; border-radius: 12px !important;
+  height: 300px !important; }
+#il-cmdrow { gap: 7px !important; margin-top: 8px !important; align-items: center !important; }
+#il-cmd-in textarea { font-family: var(--nx-mono, monospace) !important; font-size: 12.5px !important;
+  background: #0a1020 !important; border: 1px solid rgba(46,230,214,.22) !important; border-radius: 10px !important; }
+#il-cmd-run, #il-cmd-stop { min-height: 38px !important; height: 38px !important; align-self: center !important; border-radius: 10px !important; }
+#il-autofix { margin-top: 7px !important; font-size: 12px !important; }
+#il-autofix label { font-size: 12px !important; color: var(--nx-dim, #8b98b3) !important; }
+@media (max-width: 760px) { #il-labout textarea { height: 220px !important; } #il-oprow, #il-cmdrow { flex-wrap: wrap !important; } }
 """

@@ -64,7 +64,7 @@ class KaliState:
             f"{tick(self.ssh_running)}  SSH service running",
             f"{tick(self.wired_in_nanban)}  Connected to Nanban (as `kali`)",
         ]
-        return "\n".join(rows)
+        return "  \n".join(rows)          # two spaces = a real line break in Markdown
 
 
 def _run(args: list[str], timeout: int = 60, input_text: str = "") -> tuple[int, str]:
@@ -86,7 +86,51 @@ def _wsl(args: list[str], timeout: int = 60, as_root: bool = False, user: str = 
     return _run(cmd, timeout=timeout)
 
 
+def detect_cached() -> KaliState:
+    """Last known state immediately (refreshed in the background). detect() itself takes ~15 s."""
+    import json
+    import threading
+    from dataclasses import asdict
+    from pathlib import Path
+    path = Path(__file__).resolve().parent / "data" / "kali_state.json"
+
+    def refresh():
+        try:
+            path.write_text(json.dumps(asdict(detect())), encoding="utf-8")
+        except Exception:
+            pass
+
+    try:
+        state = KaliState(**json.loads(path.read_text(encoding="utf-8")))
+        threading.Thread(target=refresh, daemon=True).start()
+        return state
+    except Exception:
+        state = detect()
+        try:
+            path.write_text(json.dumps(asdict(state)), encoding="utf-8")
+        except Exception:
+            pass
+        return state
+
+
+def _port_open(port: int = 22) -> bool:
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1.5):
+            return True
+    except OSError:
+        return False
+
+
 def detect() -> KaliState:
+    """Snapshot of what's currently set up."""
+    s = _detect()
+    if s.kali_installed and not s.ssh_running and _port_open(22):
+        s.ssh_running = True              # the probe timed out, but SSH is answering
+    return s
+
+
+def _detect() -> KaliState:
     """Fast snapshot of what's currently set up."""
     s = KaliState()
     if not IS_WINDOWS:

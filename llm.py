@@ -118,12 +118,54 @@ def error_hint(e: Exception) -> str:
 _client = None
 
 
+def _http_timeout():
+    import httpx
+    return httpx.Timeout(20.0, connect=4.0)     # connect fast or fail over; 20s max silence
+
+
+class _LazyTimeout:
+    """Resolved on first use so importing llm stays cheap."""
+    _v = None
+
+    def __call__(self):
+        if _LazyTimeout._v is None:
+            _LazyTimeout._v = _http_timeout()
+        return _LazyTimeout._v
+
+
+_get_timeout = _LazyTimeout()
+
+
 def _openai_client():
     global _client
     if _client is None:
         from openai import OpenAI
-        _client = OpenAI(base_url=config.HOSTED_BASE_URL, api_key=config.HOSTED_API_KEY or "missing-key")
+        # max_retries=0: on a rate limit (429) the SDK would otherwise sleep and retry silently
+        # (10-40s stalls). We fail fast and fail over to another model/provider instead.
+        _client = OpenAI(base_url=config.HOSTED_BASE_URL, api_key=config.HOSTED_API_KEY or "missing-key",
+                         max_retries=0, timeout=_get_timeout())
     return _client
+
+
+def warmup() -> None:
+    """Load the API client and open the connection in the background at start-up, so the FIRST
+    question is as fast as the rest (the import + TLS handshake cost several seconds from a hard disk)."""
+    try:
+        if backend() == "local":
+            return
+        client = _openai_client()
+        try:
+            client.models.list()
+        except Exception:
+            pass
+        try:                                   # backup providers too, so fail-over is instant
+            from openai import OpenAI
+            for base, key, _model in _backup_providers()[:1]:
+                OpenAI(base_url=base, api_key=key, max_retries=0, timeout=_get_timeout()).models.list()
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 
 def _tools_to_openai(tool_list):
@@ -214,7 +256,61 @@ def _remember_model(new_model: str) -> None:
         _client = None
 
 
+# Fast providers we can fall back to when the active one is rate-limited / down. Each entry:
+# (substring of the saved-key slot name, base URL, model id).
+_BACKUP_PROVIDERS = (
+    ("cerebras", "https://api.cerebras.ai/v1", "gpt-oss-120b"),
+    ("groq", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b"),
+    ("groq", "https://api.groq.com/openai/v1", "openai/gpt-oss-20b"),
+)
+
+
+def _backup_providers():
+    """Other providers the user has a saved key for (never the one that just failed)."""
+    try:
+        import settings
+        keys = settings.load().get("HOSTED_KEYS", {}) or {}
+    except Exception:
+        keys = {}
+    cur = (config.HOSTED_BASE_URL or "").rstrip("/")
+    out = []
+    for sub, base, model in _BACKUP_PROVIDERS:
+        if base.rstrip("/") == cur and model == config.HOSTED_MODEL:
+            continue
+        key = next((v for k, v in keys.items() if sub in k.lower() and v), "")
+        if key:
+            out.append((base, key, model))
+    return out
+
+
 def _hosted_stream(messages, tool_list, options):
+    """Primary hosted stream, then — if it is rate-limited / down before any text was sent —
+    instantly continue on a backup provider, so the user never waits on a throttled API."""
+    started = False
+    try:
+        for ch in _hosted_stream_primary(messages, tool_list, options):
+            started = True
+            yield ch
+        return
+    except Exception as e:
+        if started or not _should_failover(e):
+            raise
+        err = e
+    from openai import OpenAI
+    for base, key, model in _backup_providers():
+        st = {"started": False}
+        try:
+            yield from _hosted_once(model, messages, tool_list, options, st,
+                                    client=OpenAI(base_url=base, api_key=key, max_retries=0, timeout=_get_timeout()))
+            return
+        except Exception as e2:
+            if st["started"]:
+                raise
+            err = e2
+    raise err
+
+
+def _hosted_stream_primary(messages, tool_list, options):
     """Stream from the hosted model with automatic failover: if the current model is missing,
     down, rate-limited, overloaded or timing out, switch to another working model on the same key
     and retry — up to a few alternates — so the user keeps getting answers. Only switches before
@@ -235,18 +331,24 @@ def _hosted_stream(messages, tool_list, options):
         if vm:
             model = vm
     last_error = None
+    model_gone = False
     for _attempt in range(4):
         tried.add(model)
         state = {"started": False}
         try:
             yield from _hosted_once(model, messages, tool_list, options, state)
-            if not routing and model != config.HOSTED_MODEL:
-                _remember_model(model)          # the alternate worked — keep it (single-model mode)
+            if not routing and model != config.HOSTED_MODEL and model_gone:
+                _remember_model(model)          # the chosen model no longer exists — keep the replacement
             return
         except Exception as e:
             last_error = e
             if state["started"] or not _should_failover(e):
                 raise                            # mid-stream, or a real error (e.g. bad key)
+            if not _model_not_found(e):
+                # Busy / rate-limited / timed out: do NOT silently downgrade to some other model on
+                # this key (and never save it). Raise so the caller jumps to a backup PROVIDER.
+                raise
+            model_gone = True
             nxt = pick_available_model(exclude=tried)
             if not nxt or nxt in tried:
                 raise
@@ -255,8 +357,8 @@ def _hosted_stream(messages, tool_list, options):
         raise last_error
 
 
-def _hosted_once(model, messages, tool_list, options, state=None):
-    client = _openai_client()
+def _hosted_once(model, messages, tool_list, options, state=None, client=None):
+    client = client or _openai_client()
     kwargs = dict(
         model=model,
         messages=_history_to_openai(messages),

@@ -19,8 +19,93 @@ INIT_JS = r"""
       try { localStorage.setItem('nb-theme', t); } catch(e) {}
     };
     let saved = 'light';
-    try { saved = localStorage.getItem('nb-theme') || 'light'; } catch(e) {}
+    try { saved = localStorage.getItem('nb-theme') || 'dark'; } catch(e) {}
     applyTheme(saved);
+
+    // ---------- left navigation (replaces the top tab bar) + chat-history clicks ----------
+    try { if (!window.__nbNav) { window.__nbNav = true;
+      // sub-menus that exist as tabs INSIDE a section (rendered lazily, so listed here)
+      const SUBS = { 'Learn': ['Sandbox', 'Guided Labs', 'SOC Sim', 'Progress'] };
+      const split = (txt) => { txt = (txt || '').replace(/\s+/g, ' ').trim();
+        const m = txt.match(/^(\S+)\s+(.*)$/); return m ? { ico: m[1], name: m[2] } : { ico: '•', name: txt }; };
+      const topBtns = () => {
+        const wrap = document.querySelector('.tabs > .tab-wrapper'); if (!wrap) return [];
+        const a = Array.from(wrap.querySelectorAll('[role="tablist"] button[role="tab"]'));
+        wrap.querySelectorAll('.overflow-dropdown button').forEach(b => a.push(b));
+        return a.filter(b => (b.innerText || '').trim());
+      };
+      const clickTop = (name) => { const b = topBtns().find(x => split(x.innerText).name === name); if (b) b.click(); return !!b; };
+      const modeLabels = () => Array.from(document.querySelectorAll('#modes label'));
+      const clickSub = (sub, n) => {
+        const b = Array.from(document.querySelectorAll('.tabitem .tabs [role="tab"], .tabitem .tabs .overflow-dropdown button'))
+          .find(x => (x.innerText || '').includes(sub));
+        if (b) { b.click(); return; }
+        if ((n || 0) < 30) setTimeout(() => clickSub(sub, (n || 0) + 1), 150);   // panel still rendering
+      };
+      let open = { Chat: true };
+      try { open = Object.assign(open, JSON.parse(localStorage.getItem('nb-nav-open') || '{}')); } catch (e) {}
+      const saveOpen = () => { try { localStorage.setItem('nb-nav-open', JSON.stringify(open)); } catch (e) {} };
+      let activeSub = {};
+      const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+
+      const render = () => {
+        const nav = document.getElementById('nb-nav'); if (!nav) return;
+        const btns = topBtns(); if (!btns.length) return;
+        const modes = modeLabels();
+        const sig = btns.map(b => b.innerText.trim() + (b.classList.contains('selected') ? '*' : '')).join('|') + '#'
+                  + modes.map(l => l.innerText.trim() + (l.classList.contains('selected') ? '*' : '')).join('|') + '#'
+                  + JSON.stringify(open) + JSON.stringify(activeSub);
+        if (nav.dataset.sig === sig) return;
+        nav.dataset.sig = sig; nav.innerHTML = '';
+        btns.forEach(b => {
+          const { ico, name } = split(b.innerText);
+          const active = b.classList.contains('selected') || b.getAttribute('aria-selected') === 'true';
+          let subs = [];
+          if (name === 'Chat') subs = modes.map(l => Object.assign(split(l.innerText),
+            { active: l.classList.contains('selected'), go: () => { clickTop('Chat'); l.click(); } }));
+          else if (SUBS[name]) subs = SUBS[name].map(sn => ({ ico: '›', name: sn, active: activeSub[name] === sn,
+            go: () => { clickTop(name); activeSub[name] = sn; clickSub(sn, 0); } }));
+          const item = el('div', 'nbn-item' + (active ? ' active' : '') + (subs.length && open[name] ? ' open' : ''));
+          item.append(el('span', 'nbn-ico', ico), el('span', 'nbn-name', name));
+          if (subs.length) item.append(el('span', 'nbn-chev', '▾'));
+          item.onclick = (e) => {
+            const onChev = e.target.classList && e.target.classList.contains('nbn-chev');
+            if (subs.length && (onChev || active)) open[name] = !open[name];      // toggle the dropdown
+            else { b.click(); if (subs.length) open[name] = true; }
+            saveOpen(); setTimeout(render, 80);
+          };
+          nav.append(item);
+          if (subs.length) {
+            const box = el('div', 'nbn-sub' + (open[name] ? ' open' : ''));
+            subs.forEach(s => {
+              const si = el('div', 'nbn-subitem' + (s.active && active ? ' active' : ''));
+              si.append(el('span', 'nbn-sico', s.ico), el('span', 'nbn-sname', s.name));
+              si.onclick = () => { s.go(); setTimeout(render, 150); };
+              box.append(si);
+            });
+            nav.append(box);
+          }
+        });
+      };
+      render(); setInterval(render, 350);       // cheap: only re-draws when the signature changes
+
+      // chat history: open / delete a saved chat from the sidebar
+      document.addEventListener('click', (e) => {
+        const t = e.target; if (!t || !t.closest) return;
+        const del = t.closest('[data-del]'); const it = t.closest('[data-chat]');
+        if (!del && !it) return;
+        e.preventDefault(); e.stopPropagation();
+        const token = del ? 'del:' + del.getAttribute('data-del') : it.getAttribute('data-chat');
+        const box = document.querySelector('#hist-pick textarea, #hist-pick input');
+        const go = document.getElementById('hist-go');
+        if (!box || !go) return;
+        const proto = box.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, 'value').set.call(box, token);
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        if (!del) clickTop('Chat');
+        setTimeout(() => go.click(), 140);
+      }, true);
+    } } catch (e) { /* navigation must never break the page */ }
 
     if (window.innerWidth < 900) {
       const b = document.querySelector('.sidebar-parent button.toggle-button, button[aria-label="Toggle Sidebar"]');
@@ -238,207 +323,258 @@ INIT_JS = r"""
     } catch(e) {}
 
     const cap = document.createElement('div'); cap.id = 'nb-jcap'; document.body.appendChild(cap);
-    const showCap = (h) => { cap.innerHTML = h; cap.style.display = 'block'; };
+    let capTimer = null;
     const hideCap = () => { cap.style.display = 'none'; };
+    const showCap = (h, ms) => { cap.innerHTML = h; cap.style.display = 'block'; clearTimeout(capTimer); if (ms) capTimer = setTimeout(hideCap, ms); };
+    const esc = (s) => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
     thmBtn.onclick = () => applyTheme(document.body.classList.contains('dark') ? 'light' : 'dark');
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const synth = window.speechSynthesis || null;
 
-    // ---------- speech synthesis (shared, natural voice) ----------
-    let speak = false;
-    const spoken = new Set();
-    let bestVoice = null;
-    const pickVoice = () => {
-      if (!window.speechSynthesis) return;
-      const vs = window.speechSynthesis.getVoices() || [];
-      bestVoice =
-        vs.find(v => /en-IN/i.test(v.lang) && /google|female|neural|natural/i.test(v.name)) ||
-        vs.find(v => /en-IN/i.test(v.lang)) ||
-        vs.find(v => /en-GB/i.test(v.lang) && /google|female|neural/i.test(v.name)) ||
-        vs.find(v => /en-GB/i.test(v.lang)) ||
-        vs.find(v => /en-US/i.test(v.lang) && /google|female|neural/i.test(v.name)) ||
-        vs.find(v => /^en/i.test(v.lang)) || vs[0] || null;
+    // ============================ speech OUT ============================
+    let speak = false;                       // "read answers aloud" toggle (🔊)
+    let voices = [];
+    const loadVoices = () => { try { voices = synth ? (synth.getVoices() || []) : []; } catch (e) { voices = []; } };
+    if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+    const hasTamil = (t) => /[஀-௿]/.test(t || '');
+    const voiceFor = (text) => {
+      const best = (list) => list.find(v => /natural|online|neural|google/i.test(v.name)) || list[0];
+      if (hasTamil(text)) { const ta = voices.filter(v => /^ta/i.test(v.lang)); if (ta.length) return best(ta); }
+      const inn = voices.filter(v => /^en[-_]IN/i.test(v.lang)); if (inn.length) return best(inn);
+      const gb = voices.filter(v => /^en[-_]GB/i.test(v.lang)); if (gb.length) return best(gb);
+      const en = voices.filter(v => /^en/i.test(v.lang)); return en.length ? best(en) : (voices[0] || null);
     };
-    if (window.speechSynthesis) { pickVoice(); window.speechSynthesis.onvoiceschanged = pickVoice; }
-
     const cleanForSpeech = (t) => (t || '')
       .replace(/```[\s\S]*?```/g, '. code block. ')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1')
       .replace(/^#{1,6}\s*/gm, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/https?:\/\/\S+/g, ' link ')
-      .replace(/[>_~|•]/g, ' ').replace(/\s+/g, ' ').trim();
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, ' ')
+      .replace(/[>_~|•#]/g, ' ').replace(/\s+/g, ' ').trim();
 
+    let speakSeq = 0;                        // every new utterance chain invalidates the previous one
+    const stopSpeaking = () => { speakSeq++; try { if (synth) synth.cancel(); } catch (e) {} };
     const speakText = (text, hooks) => {
       hooks = hooks || {};
-      if (!window.speechSynthesis) { if (hooks.onEnd) hooks.onEnd(); return; }
+      const done = () => { if (hooks.onEnd) hooks.onEnd(); };
       let say = cleanForSpeech(text);
-      let truncated = false;
-      if (say.length > 850) { say = say.slice(0, 850); truncated = true; }
-      if (truncated) say += '. Mel details screen la irukku.';
-      const u = new SpeechSynthesisUtterance(say);
-      u.lang = (bestVoice && bestVoice.lang) || 'en-IN';
-      if (bestVoice) u.voice = bestVoice;
-      u.rate = 1.03; u.pitch = 1.0;
-      if (hooks.onStart) u.onstart = hooks.onStart;
-      if (hooks.onEnd)   u.onend = hooks.onEnd;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
+      if (!synth || !say) { done(); return; }
+      if (say.length > 900) say = say.slice(0, 900) + '. Mel details screen la irukku.';
+      // speak sentence-sized chunks: browsers silently drop long utterances and never fire onend
+      const parts = say.match(/[^.!?\n]+[.!?]*\s*/g) || [say];
+      const chunks = []; let cur = '';
+      parts.forEach(p => { if ((cur + p).length > 190 && cur) { chunks.push(cur); cur = p; } else cur += p; });
+      if (cur.trim()) chunks.push(cur);
+      stopSpeaking();
+      const my = ++speakSeq; let i = 0, started = false, guard = null;
+      const next = () => {
+        clearTimeout(guard);
+        if (my !== speakSeq) return;                         // superseded or stopped
+        if (i >= chunks.length) { speakSeq++; done(); return; }
+        const u = new SpeechSynthesisUtterance(chunks[i++]);
+        const v = voiceFor(u.text);
+        if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-IN';
+        u.rate = 1.05; u.pitch = 1.0;
+        u.onstart = () => { if (!started) { started = true; if (hooks.onStart) hooks.onStart(); } };
+        u.onend = next; u.onerror = next;
+        // watchdog: if the engine stalls, move on instead of leaving Vizhi stuck in "speaking"
+        guard = setTimeout(() => { if (my === speakSeq) { try { synth.cancel(); } catch (e) {} next(); } }, 5000 + u.text.length * 120);
+        try { synth.speak(u); } catch (e) { next(); }
+      };
+      next();
     };
 
     spkBtn.onclick = () => {
       speak = !speak;
       spkBtn.style.background = speak ? '#c56a44' : '';
-      if (!speak && window.speechSynthesis) window.speechSynthesis.cancel();
+      if (!speak) stopSpeaking();
     };
 
-    // ========================= Vizhi =========================
-    let vizhiOn = false, vState = 'idle', rec = null, recActive = false, followUntil = 0;
-    let wakeMode = true;
-    try { wakeMode = localStorage.getItem('nb-wake') !== '0'; } catch(e) {}
+    // ============================ app-control helpers ============================
+    const tabBtns = () => { const w = document.querySelector('.tabs > .tab-wrapper');
+      return w ? Array.from(w.querySelectorAll('[role="tablist"] button[role="tab"], .overflow-dropdown button')) : []; };
+    const clickTab = (name) => { const n = String(name || '').toLowerCase().trim(); if (!n) return false;
+      const b = tabBtns().find(x => (x.innerText || '').toLowerCase().includes(n)); if (b) { b.click(); return true; } return false; };
+    const clickMode = (label) => { const n = String(label || '').toLowerCase().trim(); if (!n) return false;
+      const l = Array.from(document.querySelectorAll('#modes label')).find(x => (x.innerText || '').toLowerCase().includes(n));
+      if (l) { l.click(); return true; } return false; };
+    const setVal = (box, v) => {
+      const proto = box.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, 'value').set.call(box, v);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const waitFor = (sel, cb, tries) => { const x = document.querySelector(sel);
+      if (x && x.offsetParent !== null) { cb(x); return; }
+      if ((tries || 0) < 50) setTimeout(() => waitFor(sel, cb, (tries || 0) + 1), 160); };
+    const btnByText = (re) => Array.from(document.querySelectorAll('button')).find(b => re.test(b.innerText || ''));
+    const submitComposer = (text) => {
+      const ta = document.querySelector('#composer textarea'); if (!ta) return;
+      setVal(ta, text);
+      setTimeout(() => {
+        const btn = document.querySelector('#composer button.submit-button') || document.querySelector('#composer button[aria-label*="ubmit"]');
+        if (btn) btn.click();
+        else ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      }, 90);
+    };
+
+    // ============================ Vizhi ============================
+    let vizhiOn = false, vState = 'idle', rec = null, recActive = false, recWanted = false, followUntil = 0;
+    let lastAnswer = '', pendingAnswer = false, answerTimer = null;
+    // Wake word is OFF by default: speech engines can't reliably hear the word "Vizhi".
+    let wakeMode = false;
+    try { wakeMode = localStorage.getItem('nb-wake') === '1'; } catch (e) {}
+    let micLang = 'ta-IN';                   // ta-IN hears Tamil + mixed English · en-IN = English only
+    try { micLang = localStorage.getItem('nb-miclang') || 'ta-IN'; } catch (e) {}
+    const WAKE_RE = /(vizhi|vili|vizi|vishi|vichy|whizzy|wizzy|jarvis|nanban|nanba|விழி|விலி|நண்பன்|நண்பா)/i;
     const pick = (a) => a[Math.floor(Math.random() * a.length)];
     const greeting = () => {
       const h = new Date().getHours();
-      const g = h < 12 ? 'Kaalai vanakkam' : (h < 16 ? 'Nalla madhiyam' : (h < 20 ? 'Maalai vanakkam' : 'Vanakkam'));
-      return g + ', nanba. ' + pick([
-        'Sollu, enna help venum?', 'Vizhi ready. Sollu.', 'Naan ketten, sollu.',
-        'Enna pannalaam indha neram?', 'Un kannu naan, Vizhi — sollu, pannidren.']);
+      const g = h < 12 ? 'Kaalai vanakkam' : (h < 16 ? 'Madhiya vanakkam' : (h < 20 ? 'Maalai vanakkam' : 'Vanakkam'));
+      return 'Vizhi online. ' + g + ' nanba. ' + pick([
+        'Ella systems ready. Sollu, enna pannanum?', 'Naan standby la irukken — sollu.',
+        'Un kannu naan, Vizhi. Sollu, pannidren.', 'Ready nanba. Command kudu.']);
     };
-    const THINKING = ['💭 <b>Yosikiren…</b>', '💭 <b>Konja second, paakuren…</b>', '💭 <b>Thinking…</b>', '💭 <b>Processing pannuren…</b>'];
-    const DONE_TAB = (n) => pick([n + ' open pannitten, nanba.', n + ' ready. Paaru.', n + ' ponnaacho!', 'Indhaa, ' + n + ' open.']);
+    // JARVIS: a quick spoken acknowledgement the instant a request lands (then the answer follows)
+    const ACKS = ['Oru nodi nanba…', 'Paakuren…', 'Right away nanba…', 'Seri, paakuren…', 'Konja neram…'];
+    const ackSpeak = (text) => { if (!vizhiOn) return; stopRec(); setState('thinking', text); speakText(pick(ACKS)); };
     const GRAD = {
-      idle:'radial-gradient(circle at 50% 38%, #4fd1ff, #1b6fd6 60%, #0b3a8a)',
-      listening:'radial-gradient(circle at 50% 38%, #6ee7ff, #0ea5e9 60%, #0369a1)',
-      thinking:'radial-gradient(circle at 50% 38%, #ffd27a, #f59e0b 60%, #b45309)',
-      speaking:'radial-gradient(circle at 50% 38%, #8ef5b0, #22c55e 60%, #15803d)',
+      idle: 'radial-gradient(circle at 50% 38%, #4fd1ff, #1b6fd6 60%, #0b3a8a)',
+      listening: 'radial-gradient(circle at 50% 38%, #6ee7ff, #0ea5e9 60%, #0369a1)',
+      thinking: 'radial-gradient(circle at 50% 38%, #ffd27a, #f59e0b 60%, #b45309)',
+      speaking: 'radial-gradient(circle at 50% 38%, #8ef5b0, #22c55e 60%, #15803d)',
     };
     const listenCap = (heard) => {
-      const tog = `<span id="nb-wtog" style="cursor:pointer;color:#6ee7ff;text-decoration:underline">[wake-word: ${wakeMode ? 'ON' : 'OFF'}]</span>`;
-      const hint = wakeMode ? 'Say <b>"Vizhi…"</b> then your command'
-                            : 'Say anything — "open Kali", "draw a cat"';
-      const h = heard ? `<span class="nb-heard">heard: ${heard}</span>` : '';
-      return `🎙️ <b>Listening…</b> ${tog}<br><span style="opacity:.8">${hint}</span>${h}`;
+      const ltog = `<span id="nb-ltog" style="cursor:pointer;color:#6ee7ff;text-decoration:underline">[mic: ${micLang === 'ta-IN' ? 'Tamil + English' : 'English'}]</span>`;
+      const tog = `<span id="nb-wtog" style="cursor:pointer;color:#6ee7ff;text-decoration:underline">[wake word: ${wakeMode ? 'ON' : 'OFF'}]</span>`;
+      const hint = wakeMode ? 'Say <b>"Vizhi…"</b> then your command' : 'Just talk — "Kali open pannu", "CM yaar ippo", "ports scan pannu"';
+      const h = heard ? `<span class="nb-heard">🗣️ ${esc(heard)}</span>` : '';
+      return `🎙️ <b>Listening…</b> ${ltog} ${tog}<br><span style="opacity:.8">${hint}</span>${h}`;
     };
-    const bindTog = () => { const w = document.getElementById('nb-wtog'); if (w) w.onclick = () => {
-      wakeMode = !wakeMode; try { localStorage.setItem('nb-wake', wakeMode ? '1' : '0'); } catch(e) {}
-      if (vState === 'listening') { showCap(listenCap()); bindTog(); } }; };
-    const setState = (s, heard) => {
+    const bindTog = () => {
+      const w = document.getElementById('nb-wtog'); if (w) w.onclick = () => {
+        wakeMode = !wakeMode; try { localStorage.setItem('nb-wake', wakeMode ? '1' : '0'); } catch (e) {}
+        if (vState === 'listening') { showCap(listenCap()); bindTog(); } };
+      const l = document.getElementById('nb-ltog'); if (l) l.onclick = () => {
+        micLang = (micLang === 'ta-IN') ? 'en-IN' : 'ta-IN';
+        try { localStorage.setItem('nb-miclang', micLang); } catch (e) {}
+        if (rec) { try { rec.abort(); } catch (e) {} }          // onend restarts it in the new language
+        if (vState === 'listening') { showCap(listenCap()); bindTog(); } };
+    };
+    const setState = (s, extra) => {
       vState = s;
       orb.style.background = GRAD[s] || GRAD.idle;
       orb.classList.toggle('nb-pulse', s === 'listening' || s === 'speaking');
       orb.classList.toggle('nb-breath', s === 'listening');
       if (s === 'idle') { hideCap(); return; }
-      showCap(s === 'listening' ? listenCap(heard) : (s === 'thinking' ? pick(THINKING) : '🔊 <b>Speaking…</b>'));
-      if (s === 'listening') bindTog();
+      if (s === 'listening') { showCap(listenCap(extra)); bindTog(); }
+      else if (s === 'thinking') showCap('💭 <b>Yosikiren…</b>' + (extra ? `<span class="nb-heard">🗣️ ${esc(extra)}</span>` : ''));
+      else showCap('🔊 <b>Speaking…</b> <span style="opacity:.75">(orb-ah thattina niruthuven)</span>' + (extra ? `<span class="nb-heard">${esc(extra)}</span>` : ''));
     };
-    const sayVizhi = (text) => speakText(text, {
-      onStart: () => { if (vizhiOn) { setState('speaking'); try { rec.stop(); } catch(e) {} } },
-      onEnd:   () => { if (vizhiOn) { followUntil = Date.now() + 9000; setState('listening'); try { rec.start(); } catch(e) {} } },
-    });
+    const startRec = () => { recWanted = true; if (!rec || recActive) return; try { rec.lang = micLang; rec.start(); } catch (e) {} };
+    const stopRec = () => { recWanted = false; if (!rec) return; try { rec.abort(); } catch (e) { try { rec.stop(); } catch (e2) {} } };
+    const backToListening = () => { if (vizhiOn) { followUntil = Date.now() + 9000; setState('listening'); startRec(); } };
+    const turnOff = () => { vizhiOn = false; pendingAnswer = false; clearTimeout(answerTimer); stopRec(); stopSpeaking(); setState('idle'); };
 
-    // ---- app-control helpers ----
-    const clickTab = (name) => {
-      const t = Array.from(document.querySelectorAll('[role="tab"], button')).find(el =>
-        (el.innerText || '').toLowerCase().includes(name.toLowerCase())
-        && (el.getAttribute('role') === 'tab' || (el.className || '').includes('tab')));
-      if (t) { t.click(); return true; } return false;
-    };
-    const clickMode = (label) => {
-      const l = Array.from(document.querySelectorAll('#modes label')).find(el =>
-        (el.innerText || '').toLowerCase().includes(label.toLowerCase()));
-      if (l) { l.click(); return true; } return false;
-    };
-    const setVal = (ta, v) => {
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-      setter.call(ta, v); ta.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    const btnByText = (re) => Array.from(document.querySelectorAll('button')).find(b => re.test(b.innerText || ''));
-    const submitComposer = (text) => {
-      const ta = document.querySelector('#composer textarea');
-      if (!ta) return;
-      setVal(ta, text);
-      setTimeout(() => {
-        let btn = document.querySelector('#composer button.submit-button') || document.querySelector('#composer button[aria-label*="ubmit"]');
-        if (!btn) {
-          const c = Array.from(document.querySelectorAll('#composer button')).filter(b => b.querySelector('svg') && !/upload|image/i.test(b.getAttribute('aria-label') || ''));
-          btn = c[c.length - 1];
-        }
-        if (btn) btn.click();
-        else ta.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true }));
-      }, 70);
-    };
-    const TABS = [
-      {k:['india lab','india','lab'], n:'India Lab'},
-      {k:['image','images','padam','photo','picture'], n:'Images'},
-      {k:['terminal','command line'], n:'Terminal'},
-      {k:['security'], n:'Security'},
-      {k:['kali','linux','hacking tool'], n:'Kali'},
-      {k:['learn','study','practice','sandbox'], n:'Learn'},
-      {k:['admin','settings','setting','automation'], n:'Admin'},
-      {k:['chat','conversation'], n:'Chat'},
-    ];
-    const MODES = [
-      {k:['coding','code','program'], n:'Coding'}, {k:['writing','write'], n:'Writing'},
-      {k:['research'], n:'Research'}, {k:['study'], n:'Study'}, {k:['business'], n:'Business'},
-      {k:['security tutor','security mode','tutor'], n:'Security Tutor'}, {k:['computer'], n:'Computer'},
-      {k:['assistant','personal','default','normal'], n:'Personal Assistant'},
-    ];
-    const NAVVERB = /\b(open|go to|goto|show|switch|take me|move to|kaattu|kaami|kaamu|po|poo|thirum)\b/i;
-
-    const routeCommand = (t) => {
-      const low = t.toLowerCase().trim();
-      if (/^(stop|quiet|silence|mute|nillu|niruthu|cancel|summa iru)\b/.test(low)) {
-        if (window.speechSynthesis) window.speechSynthesis.cancel();
-        if (vizhiOn) setState('listening'); return true;
+    // Speak as Vizhi. The mic is closed first so Vizhi never hears (and obeys) its own voice.
+    const sayVizhi = (text) => {
+      if (!vizhiOn) {                       // typed command while the orb is off: confirm on screen
+        showCap('✅ ' + esc(text), 3500);
+        if (speak) speakText(text);
+        return;
       }
-      if (/\b(vizhi off|jarvis off|stop listening|sleep|off pannu|podhum)\b/.test(low)) {
-        vizhiOn = false; setState('idle'); try { rec.stop(); } catch(e) {}
-        if (window.speechSynthesis) window.speechSynthesis.cancel(); return true;
-      }
-      if (/\b(repeat|again|marubadi|thirumba sollu|say again|read again)\b/.test(low)) {
-        const bots = document.querySelectorAll('#chat .bot');
-        if (bots.length) sayVizhi((bots[bots.length-1].innerText || '').trim()); return true;
-      }
-      if (/\b(dark mode|night mode|dark pannu|dark theme|iruttu)\b/.test(low)) { applyTheme('dark'); sayVizhi('Dark mode on'); return true; }
-      if (/\b(light mode|day mode|light pannu|light theme|velicham)\b/.test(low)) { applyTheme('light'); sayVizhi('Light mode on'); return true; }
-      if (/\b(new chat|pudhu chat|pudusa|fresh chat|clear chat)\b/.test(low)) {
-        const nc = document.getElementById('new-chat'); if (nc) { nc.click(); sayVizhi('New chat ready'); return true; }
-      }
-      const mi = low.match(/(?:draw|image of|picture of|generate image of|create image of|create a image of|padam\s*podu|photo of)\s+(.+)/i);
-      if (mi && mi[1]) {
-        const subj = mi[1].trim(); clickTab('Images');
-        setTimeout(() => { const ta = document.querySelector('#img-prompt textarea'); if (ta) { setVal(ta, subj); const b = btnByText(/create image/i); if (b) b.click(); } }, 650);
-        sayVizhi('Image ready pannuren: ' + subj); return true;
-      }
-      if (/\b(install arsenal|install tools|install everything|full arsenal|ella tools install)\b/.test(low)) {
-        clickTab('Kali'); setTimeout(() => { const b = btnByText(/install full arsenal/i); if (b) b.click(); }, 650);
-        sayVizhi('Installing the Kali arsenal'); return true;
-      }
-      const mk2 = low.match(/\b(scan|run|nmap|check ports|port scan)\b\s*(.*)/i);
-      if (mk2) {
-        clickTab('Kali'); const cmd = t;
-        setTimeout(() => { const ta = document.querySelector('#kali-ai-in textarea'); if (ta) { setVal(ta, cmd); const b = btnByText(/run with ai/i); if (b) b.click(); } }, 650);
-        sayVizhi('Kali-la pannuren'); return true;
-      }
-      if (/\b(mode|tutor)\b/.test(low)) {
-        for (const m of MODES) if (m.k.some(k => low.includes(k))) { if (clickMode(m.n)) { sayVizhi(m.n + ' mode'); return true; } }
-      }
-      if (NAVVERB.test(low)) {
-        for (const tb of TABS) if (tb.k.some(k => low.includes(k))) { if (clickTab(tb.n)) { sayVizhi(DONE_TAB(tb.n)); return true; } }
-      }
-      return false;
+      stopRec(); setState('speaking', (text || '').slice(0, 90));
+      speakText(text, { onEnd: backToListening });
     };
 
-    const handle = (t) => {
-      t = t.replace(/\b(hey\s+|ok\s+)?(vizhi|jarvis|nanban|friend)\b[,\.\s]*/ig, ' ').replace(/\s+/g, ' ').trim();
-      if (t.length < 2) { if (vizhiOn) setState('listening'); return; }
-      if (routeCommand(t)) return;
-      setState('thinking');
-      submitComposer(t);
+    // ---- ask the server what the sentence MEANS (works for English, Tanglish and Tamil script) ----
+    let intentId = 0, intentCb = null, intentTimer = null;
+    window.__vizhiIntent = (raw) => {
+      let o = null; try { o = JSON.parse(raw); } catch (e) {}
+      if (!o || !intentCb || (o.id !== undefined && Number(o.id) !== intentId)) return;
+      const cb = intentCb; intentCb = null; clearTimeout(intentTimer); cb(o);
+    };
+    const askIntent = (text, cb) => {
+      const box = document.querySelector('#viz-in textarea, #viz-in input'); const go = document.getElementById('viz-go');
+      if (!box || !go) { cb({ action: 'chat' }); return; }
+      intentId++; intentCb = cb;
+      setVal(box, intentId + '|' + text); setTimeout(() => go.click(), 70);
+      clearTimeout(intentTimer);
+      intentTimer = setTimeout(() => { if (intentCb) { const c = intentCb; intentCb = null; c({ action: 'chat' }); } }, 8000);
     };
 
-    // typed-command fallback wiring (works with or without speech support)
+    const execute = (o, t) => {
+      const say = String(o.say || '').trim();
+      const target = String(o.target || '').trim();
+      switch (o.action) {
+        case 'open_section':
+          if (clickTab(target)) sayVizhi(say || (target + ' open pannitten.')); else sayVizhi('Andha section kedaikkala.');
+          break;
+        case 'set_mode':
+          clickTab('Chat'); setTimeout(() => clickMode(target), 300);
+          sayVizhi(say || (target + ' mode.')); break;
+        case 'new_chat':
+          clickTab('Chat'); setTimeout(() => { const nc = document.getElementById('new-chat'); if (nc) nc.click(); }, 250);
+          sayVizhi(say || 'Pudhu chat ready.'); break;
+        case 'theme':
+          applyTheme(/light|velich/i.test(target) ? 'light' : 'dark'); sayVizhi(say || 'Theme maathitten.'); break;
+        case 'kali_run':
+          clickTab('Kali');
+          waitFor('#kali-ai-in textarea', (ta) => { setVal(ta, target || t);
+            setTimeout(() => { const b = document.getElementById('kali-ai-run'); if (b) b.click(); }, 200); });
+          sayVizhi(say || 'Kali-la run pannuren.'); break;
+        case 'terminal_run':
+          clickTab('Terminal');
+          waitFor('#term-in textarea', (ta) => { setVal(ta, target);
+            setTimeout(() => { const b = document.querySelector('#term-in button'); if (b) b.click(); }, 200); });
+          sayVizhi(say || 'Terminal-la run pannuren.'); break;
+        case 'make_image':
+          clickTab('Images');
+          waitFor('#img-prompt textarea', (ta) => { setVal(ta, target || t);
+            setTimeout(() => { const b = document.getElementById('img-gen'); if (b) b.click(); }, 200); });
+          sayVizhi(say || 'Image ready pannuren.'); break;
+        case 'repeat':
+          sayVizhi(lastAnswer || 'Repeat panna onnum illa.'); break;
+        case 'stop_speaking':
+          stopSpeaking(); backToListening(); if (!vizhiOn) hideCap(); break;
+        case 'vizhi_off':
+          turnOff(); break;
+        default:                             // a question / conversation → the chat answers, then Vizhi reads it
+          clickTab('Chat');
+          pendingAnswer = true; clearTimeout(answerTimer);
+          answerTimer = setTimeout(() => { if (pendingAnswer) { pendingAnswer = false; backToListening(); if (!vizhiOn) hideCap(); } }, 70000);
+          ackSpeak(t);                       // JARVIS: respond instantly, the full answer follows
+          waitFor('#composer textarea', () => submitComposer(t));
+      }
+    };
+
+    const STOP_RE = /^(stop|nillu|niruthu|niruthu da|quiet|silence|cancel|podhum|நிறுத்து|நில்லு|போதும்)[\s.!]*$/i;
+    const handle = (raw) => {
+      let t = String(raw || '').replace(/^\s*(hey|ok|hi)\s+/i, '');
+      const m = t.match(WAKE_RE);
+      if (m && t.indexOf(m[0]) < 14) t = t.slice(t.indexOf(m[0]) + m[0].length);   // drop a leading wake word
+      t = t.replace(/^[\s,.:!-]+/, '').replace(/\s+/g, ' ').trim();
+      if (t.length < 2) { backToListening(); return; }
+      if (STOP_RE.test(t)) { stopSpeaking(); backToListening(); if (!vizhiOn) hideCap(); return; }
+      stopRec();
+      if (vizhiOn) setState('thinking', t); else showCap('💭 <b>Yosikiren…</b><span class="nb-heard">' + esc(t) + '</span>');
+      askIntent(t, (o) => execute(o, t));
+    };
+
+    // every finished chat answer arrives here from the server (clean text, no tool cards)
+    window.__nbSpeakAnswer = (text) => {
+      text = String(text || '').trim();
+      if (text) lastAnswer = text;
+      if (vizhiOn) {
+        pendingAnswer = false; clearTimeout(answerTimer);
+        if (text) sayVizhi(text); else backToListening();
+      } else if (speak && text) speakText(text);
+      else if (pendingAnswer) { pendingAnswer = false; clearTimeout(answerTimer); hideCap(); }
+    };
+
+    // typed-command box (works with or without a microphone)
     const cmdIn = document.getElementById('nb-cmdin');
     const toggleCmd = () => {
       const open = cmdWrap.style.display === 'block';
@@ -450,8 +586,7 @@ INIT_JS = r"""
       cmdIn.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          const v = (cmdIn.value || '').trim();
-          if (!v) return;
+          const v = (cmdIn.value || '').trim(); if (!v) return;
           cmdIn.value = ''; cmdWrap.style.display = 'none';
           handle(v);
         } else if (e.key === 'Escape') { cmdWrap.style.display = 'none'; }
@@ -460,48 +595,56 @@ INIT_JS = r"""
 
     if (SR) {
       rec = new SR();
-      rec.lang = 'en-IN'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+      rec.lang = micLang; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+      let buf = '', bufTimer = null;
       rec.onstart = () => { recActive = true; };
       rec.onaudiostart = () => { recActive = true; };
       rec.onresult = (ev) => {
-        if (!vizhiOn || vState === 'speaking' || vState === 'thinking') return;
-        let interim = '', finalTxt = '';
+        if (!vizhiOn || vState !== 'listening') return;
+        let interim = '', fin = '';
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
           const r = ev.results[i];
-          if (r.isFinal) finalTxt += r[0].transcript; else interim += r[0].transcript;
+          if (r.isFinal) fin += r[0].transcript + ' '; else interim += r[0].transcript;
         }
-        if (interim && vState === 'listening') showCap(listenCap(interim.trim().slice(0, 60)));
-        const raw = (finalTxt || '').trim();
-        if (!raw) return;
-        const hasWake = /\b(vizhi|jarvis|nanban|friend)\b/i.test(raw) || /^(hey|ok)\s/i.test(raw);
-        const inFollow = Date.now() < followUntil;
-        if (wakeMode && !hasWake && !inFollow) { if (vState === 'listening') showCap(listenCap()); return; }
-        handle(raw);
+        if (fin) buf += fin;
+        const shown = (buf + ' ' + interim).trim();
+        if (shown) { showCap(listenCap(shown.slice(-80))); bindTog(); }
+        clearTimeout(bufTimer);
+        if (!buf.trim()) return;
+        // wait for a short pause so a sentence spoken in two breaths is handled as ONE command
+        bufTimer = setTimeout(() => {
+          const text = buf.trim(); buf = '';
+          if (!vizhiOn || vState !== 'listening' || !text) return;
+          if (wakeMode && !WAKE_RE.test(text) && Date.now() > followUntil) { showCap(listenCap()); bindTog(); return; }
+          handle(text);
+        }, interim ? 1500 : 950);
       };
-      rec.onend = () => { recActive = false; if (vizhiOn && vState !== 'speaking') { try { rec.start(); } catch(e) {} } };
+      rec.onend = () => {
+        recActive = false;
+        if (vizhiOn && recWanted) setTimeout(() => { if (vizhiOn && recWanted && !recActive) { try { rec.lang = micLang; rec.start(); } catch (e) {} } }, 250);
+      };
       rec.onerror = (e) => {
         recActive = false;
-        if (e && e.error === 'not-allowed') { vizhiOn = false; setState('idle'); orb.title = 'Mic blocked — allow it in the browser'; }
-        // 'no-speech' / 'network' / 'aborted' → let onend restart
+        const err = e && e.error;
+        if (err === 'not-allowed' || err === 'service-not-allowed') {
+          turnOff(); orb.title = 'Mic blocked — allow it in the browser';
+          showCap('🎤 <b>Mic blocked.</b> Address bar-la 🔒 click panni Microphone → Allow, aprama orb-ah thirumba press pannu. (Illa ⌨️ button-la type pannu.)', 9000);
+        } else if (err === 'audio-capture') {
+          turnOff(); showCap('🎤 <b>Mic kedaikkala.</b> Laptop mic on-la irukka-nu paaru.', 7000);
+        } else if (err === 'language-not-supported') {
+          micLang = 'en-IN'; try { localStorage.setItem('nb-miclang', micLang); } catch (e2) {}
+        }
+        // 'no-speech' / 'network' / 'aborted' → onend restarts when wanted
       };
-
-      // self-healing watchdog: if we should be listening but recognition died, restart it
-      setInterval(() => {
-        if (vizhiOn && (vState === 'listening') && !recActive) { try { rec.start(); } catch(e) {} }
-      }, 3000);
+      // self-healing: if we should be listening but the engine died, start it again
+      setInterval(() => { if (vizhiOn && recWanted && !recActive) { try { rec.lang = micLang; rec.start(); } catch (e) {} } }, 2500);
 
       orb.onclick = () => {
-        vizhiOn = !vizhiOn;
-        if (vizhiOn) {
-          speak = true; spkBtn.style.background = '#c56a44';
-          clickMode('Vizhi');   // give spoken answers Vizhi's warm personality
-          setState('listening');
-          try { rec.start(); } catch(e) {}
-          speakText(greeting());
-        } else {
-          setState('idle'); try { rec.stop(); } catch(e) {}
-          if (window.speechSynthesis) window.speechSynthesis.cancel();
-        }
+        if (vizhiOn && vState === 'speaking') { stopSpeaking(); backToListening(); return; }   // tap = interrupt and listen
+        if (vizhiOn) { turnOff(); return; }
+        vizhiOn = true; speak = true; spkBtn.style.background = '#c56a44';
+        clickMode('Vizhi');                 // spoken answers use Vizhi's short, voice-friendly style
+        sayVizhi(greeting());
       };
     } else {
       // No Web Speech API (Firefox, some in-app browsers, phone over plain-http LAN):
@@ -513,9 +656,9 @@ INIT_JS = r"""
     // ---------- one-shot mic (speech -> composer) ----------
     if (SR) {
       const rec1 = new SR();
-      rec1.lang = 'en-IN'; rec1.interimResults = false; rec1.maxAlternatives = 1;
+      rec1.lang = micLang; rec1.interimResults = false; rec1.maxAlternatives = 1;
       let listening = false;
-      micBtn.onclick = () => { if (listening) { rec1.stop(); return; } try { rec1.start(); } catch(e) {} };
+      micBtn.onclick = () => { if (listening) { rec1.stop(); return; } try { rec1.lang = micLang; rec1.start(); } catch(e) {} };
       rec1.onstart = () => { listening = true; micBtn.style.background = '#c56a44'; micBtn.textContent = '●'; };
       rec1.onend   = () => { listening = false; micBtn.style.background = ''; micBtn.textContent = '🎤'; };
       rec1.onerror = () => { listening = false; micBtn.style.background = ''; micBtn.textContent = '🎤'; };
@@ -601,25 +744,6 @@ INIT_JS = r"""
       document.addEventListener('focusout', () => { setTimeout(()=>{ if(!isT(document.activeElement)) hide(); }, 180); });
     })();
 
-    // ---------- read answers aloud; drive Vizhi states + follow-up ----------
-    let timer = null;
-    const sayLatest = () => {
-      if (!speak || !window.speechSynthesis) { if (vizhiOn) setState('listening'); return; }
-      const bots = document.querySelectorAll('#chat .bot');
-      if (!bots.length) { if (vizhiOn) setState('listening'); return; }
-      const text = (bots[bots.length - 1].innerText || '').trim();
-      if (!text || spoken.has(text)) { if (vizhiOn && vState === 'thinking') setState('listening'); return; }
-      spoken.add(text);
-      speakText(text, {
-        onStart: () => { if (vizhiOn) { setState('speaking'); try { rec.stop(); } catch(e) {} } },
-        onEnd:   () => { if (vizhiOn) { followUntil = Date.now() + 9000; setState('listening'); try { rec.start(); } catch(e) {} } },
-      });
-    };
-    const chat = document.querySelector('#chat');
-    if (chat) {
-      const obs = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(sayLatest, 1100); });
-      obs.observe(chat, { childList: true, subtree: true, characterData: true });
-    }
   } catch (e) { /* never break the page */ }
 }
 """

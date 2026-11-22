@@ -114,27 +114,107 @@ def calculate(expression: str) -> str:
 
 # ---------------------------------------------------------------- web
 
-def web_search(query: str, max_results: int = 5) -> str:
-    """Search the internet (DuckDuckGo) for current information. Returns titles, links and snippets.
+_SEARCH_CACHE: dict = {}          # query -> (timestamp, result): instant answers on repeat
+_SEARCH_TTL = 300                  # seconds
+_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nanban/1.0"}
+
+
+def _http_text(url: str, timeout: float = 4.0) -> str:
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request(url, headers=_UA), timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def _google_news(q: str, n: int = 4) -> list:
+    """Today's headlines from Google News (RSS, no key) — the freshest signal for 'who/what now'."""
+    import html
+    import urllib.parse
+    xml = _http_text("https://news.google.com/rss/search?q=" + urllib.parse.quote(q) + "&hl=en-IN&gl=IN&ceid=IN:en")
+    out = []
+    for item in re.findall(r"<item>(.*?)</item>", xml, flags=re.S)[:n]:
+        title = re.search(r"<title>(.*?)</title>", item, flags=re.S)
+        date = re.search(r"<pubDate>(.*?)</pubDate>", item, flags=re.S)
+        if title:
+            out.append((html.unescape(title.group(1)).strip(), (date.group(1)[:16] if date else "").strip()))
+    return out
+
+
+def _wikipedia(q: str, n: int = 3) -> list:
+    import json as _json
+    import urllib.parse
+    data = _json.loads(_http_text("https://en.wikipedia.org/w/api.php?action=query&list=search&format=json"
+                                  f"&srlimit={n}&srsearch=" + urllib.parse.quote(q)))
+    return [{"title": r["title"] + " - Wikipedia",
+             "href": "https://en.wikipedia.org/wiki/" + urllib.parse.quote(r["title"].replace(" ", "_")),
+             "body": re.sub(r"<.*?>", "", r.get("snippet", ""))} for r in data.get("query", {}).get("search", [])]
+
+
+def _engine(q: str, n: int, backend: str):
+    from ddgs import DDGS
+    return DDGS(timeout=4).text(q, max_results=n, backend=backend) or None
+
+
+def web_search(query: str, max_results: int = 4) -> str:
+    """Search the internet for current information: Google News headlines (with dates) plus web
+    results from Google / Bing / Yahoo / DuckDuckGo. Fast: ONE search is enough per question.
 
     Args:
         query: What to search for, in a few keywords
-        max_results: How many results to return (1-10)
+        max_results: How many web results to return (1-6)
     """
+    import concurrent.futures as _cf
+    import time as _t
     allowed, reason = vpn.internet_allowed()
     if not allowed:
         return reason
+    q = (query or "").strip()
+    if not q:
+        return "No query given."
+    n = max(1, min(int(max_results), 6))
+    hit = _SEARCH_CACHE.get(q)
+    if hit and (_t.time() - hit[0] < _SEARCH_TTL):
+        return hit[1]                                   # recent identical search -> instant
+
+    # Everything fires at once; we stop waiting as soon as we have news + one set of web results.
+    ex = _cf.ThreadPoolExecutor(max_workers=8)
+    f_news = ex.submit(_google_news, q)
+    f_wiki = ex.submit(_wikipedia, q)
+    f_web = [ex.submit(_engine, q, n, be) for be in ("yahoo", "google", "bing", "lite", "duckduckgo")]
+    web, news, wiki = None, [], []
+    start = _t.time()
+    while _t.time() - start < 5.0:
+        if web is None:
+            for f in f_web:
+                if f.done() and not f.exception() and f.result():
+                    web = f.result()
+                    break
+        if f_news.done() and (web is not None or _t.time() - start > 2.5):
+            break
+        _t.sleep(0.05)
     try:
-        from ddgs import DDGS
-        results = DDGS().text(query, max_results=max(1, min(int(max_results), 10)))
-    except Exception as e:
-        return f"Web search failed ({e}). Check your internet connection."
-    if not results:
-        return "No results found."
-    lines = []
-    for i, r in enumerate(results, 1):
-        lines.append(f"{i}. {r.get('title', '')}\n   {r.get('href', '')}\n   {r.get('body', '')}")
-    return "\n".join(lines)
+        news = f_news.result(timeout=0.01) if f_news.done() else []
+    except Exception:
+        news = []
+    try:
+        wiki = f_wiki.result(timeout=0.01) if f_wiki.done() else []
+    except Exception:
+        wiki = []
+    ex.shutdown(wait=False, cancel_futures=True)        # never wait for slow engines
+
+    parts = []
+    if news:
+        parts.append("LATEST NEWS (Google News - newest first, trust these dates for 'who/what is it NOW'):\n" +
+                     "\n".join(f"- [{d}] {t}" for t, d in news))
+    results = web or wiki
+    if results:
+        parts.append("WEB RESULTS:\n" + "\n".join(
+            f"{i}. {r.get('title', '')}\n   {r.get('href', '')}\n   {(r.get('body', '') or '')[:300]}"
+            for i, r in enumerate(results[:n], 1)))
+    if not parts:
+        return "Web search returned nothing right now. Say your information may be outdated."
+    out = "\n\n".join(parts)[:2600]
+    _SEARCH_CACHE[q] = (_t.time(), out)
+    return out
 
 
 def fetch_webpage(url: str) -> str:
@@ -151,7 +231,7 @@ def fetch_webpage(url: str) -> str:
     try:
         import requests
         from bs4 import BeautifulSoup
-        response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (LocalAIAgent)"})
+        response = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0 (LocalAIAgent)"})
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "form", "noscript"]):
@@ -304,7 +384,7 @@ def clear_memory(user: str = "") -> None:
     _save_json(memory_file(user), [])
 
 
-USER_SCOPED = {"add_task", "list_tasks", "complete_task", "remember", "forget"}
+USER_SCOPED = {"add_task", "list_tasks", "complete_task", "remember", "forget", "search_past_chats"}
 
 
 def for_user(func, user: str):
@@ -365,11 +445,22 @@ def self_check() -> str:
     return doctor.quick_summary()
 
 
+def search_past_chats(query: str, user: str = "") -> str:
+    """Search the user's own conversations with you from the last 7 days. Use it when they refer
+    back to something discussed earlier ("that script from yesterday", "what did we decide about X").
+
+    Args:
+        query: A few keywords describing what to look for
+    """
+    import chat_history
+    return chat_history.search(user, query)
+
+
 ALL_TOOLS = {f.__name__: f for f in [
     get_current_time, calculate, web_search, fetch_webpage,
     list_files, read_file, write_file, run_python,
     add_task, list_tasks, complete_task,
-    remember, forget,
+    remember, forget, search_past_chats,
     search_documents, list_documents,
     self_check,
 ]}
@@ -387,6 +478,7 @@ TOOL_LABELS = {
     "list_tasks": "📋 Checking tasks",
     "complete_task": "☑️ Completing a task",
     "remember": "🧠 Saving to memory",
+    "search_past_chats": "🗂️ Recalling earlier chats",
     "forget": "🧹 Removing from memory",
     "search_documents": "📚 Searching your documents",
     "self_check": "🩺 Checking & fixing Nanban",

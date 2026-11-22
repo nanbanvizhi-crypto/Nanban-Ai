@@ -7,6 +7,20 @@
 # Everything is idempotent; the dock is created once (marker file) so user changes stick.
 
 export DISPLAY="${DISPLAY:-:7}"
+
+# Reload the panel ONLY when it is registered on the session bus, so we never trigger
+# the "Failed to restart the panel" (org.xfce.Panel not provided) error dialog during
+# the start-up race. If it never appears, the fresh panel already read the new config.
+panel_reload() {
+  for _ in $(seq 1 30); do
+    if gdbus introspect --session --dest org.xfce.Panel          --object-path /org/xfce/Panel >/dev/null 2>&1; then
+      xfce4-panel -r >/dev/null 2>&1 || true
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 0
+}
 MARK="$HOME/.config/nanban-desktop.tuned"
 WALL=/usr/share/backgrounds/kali-16x9/default
 [ -e "$WALL" ] || WALL=$(ls /usr/share/backgrounds/kali/*16x9*.jpg 2>/dev/null | head -1)
@@ -33,6 +47,65 @@ if [ -n "$WALL" ]; then
   xfdesktop --reload >/dev/null 2>&1 || true
 fi
 
+# ---- real Kali application menu: point the whisker menu at the Kali menu ----
+# kali-menu ships /etc/xdg/menus/applications-merged/kali-applications.menu with the
+# full Kali tool categories (Reconnaissance, Initial Access, Privilege Escalation, …).
+# The whisker menu defaults to xfce-applications.menu, which does NOT show them, so we
+# point it at the Kali menu and turn on the category tree. (Runs every login, pre-marker.)
+KMENU=/etc/xdg/menus/applications-merged/kali-applications.menu
+WPID=$(xfconf-query -c xfce4-panel -p /plugins -lv 2>/dev/null | awk '/whiskermenu/{print $1}' | grep -oE '[0-9]+$' | head -1)
+if [ -n "$WPID" ] && [ -e "$KMENU" ]; then
+  RC="$HOME/.config/xfce4/panel/whiskermenu-$WPID.rc"
+  mkdir -p "$(dirname "$RC")"
+  cat > "$RC" <<RCEOF
+favorites=
+recent=
+button-title=Applications
+button-icon=kali-panel-menu
+show-button-title=false
+show-button-icon=true
+menu=$KMENU
+show-category-names=true
+view-as-icons=false
+load-hierarchy=true
+default-category=0
+position-categories-alternate=true
+launcher-show-name=true
+launcher-show-description=true
+item-icon-size=2
+category-icon-size=1
+RCEOF
+fi
+update-desktop-database "$HOME/.local/share/applications" 2>/dev/null
+xdg_user=1
+
+# ---- PERFORMANCE: this desktop is drawn in software and sent over VNC ----
+# Compositing (shadows/transparency) costs a lot of CPU for zero benefit here -> off.
+xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false 2>/dev/null
+xfconf-query -c xfwm4 -p /general/box_move   -n -t bool -s false 2>/dev/null
+xfconf-query -c xfwm4 -p /general/box_resize -n -t bool -s false 2>/dev/null
+xfconf-query -c xsettings -p /Gtk/EnableAnimations -n -t bool -s false 2>/dev/null
+xfconf-query -c xsettings -p /Net/EnableEventSounds -n -t bool -s false 2>/dev/null
+# Background helpers that are useless inside WSL (no battery, no NetworkManager, no lock screen)
+mkdir -p "$HOME/.config/autostart"
+for f in xfce4-power-manager xfce4-screensaver nm-applet kali-vboxclient xcape-super-key-bind; do
+  printf '[Desktop Entry]
+Type=Application
+Name=%s
+Hidden=true
+' "$f" > "$HOME/.config/autostart/$f.desktop"
+done
+pkill -u "$USER" -x xfce4-power-man 2>/dev/null; pkill -u "$USER" -x xfce4-screensav 2>/dev/null; pkill -u "$USER" -x nm-applet 2>/dev/null
+# Warm the disk cache for the heavy tools (Kali lives on a hard disk): after this runs once
+# per boot, Metasploit / Burp / Wireshark / Firefox open several times faster.
+( sleep 90
+  for d in /usr/share/metasploit-framework/lib /usr/share/metasploit-framework/vendor/bundle            /usr/share/burpsuite /usr/lib/x86_64-linux-gnu/wireshark /usr/lib/firefox-esr            /usr/lib/jvm/default-java/lib /usr/share/zaproxy; do
+    [ -d "$d" ] && find "$d" -type f -size -80M -print0 2>/dev/null | xargs -0 -r cat > /dev/null 2>&1
+  done
+  for b in wireshark nmap sqlmap hydra john hashcat msfconsole ruby java xfce4-terminal thunar; do
+    b=$(command -v "$b" 2>/dev/null) && cat "$b" > /dev/null 2>&1
+  done ) >/dev/null 2>&1 &
+
 # ---- remote-desktop friendly: no screen lock / blanking / DPMS ----
 xfconf-query -c xfce4-screensaver -p /saver/enabled -n -t bool -s false 2>/dev/null
 xfconf-query -c xfce4-screensaver -p /lock/enabled  -n -t bool -s false 2>/dev/null
@@ -40,54 +113,33 @@ xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/dpms-enabled -n -t b
 xfconf-query -c xfce4-power-manager -p /xfce4-power-manager/blank-on-ac -n -t int -s 0 2>/dev/null
 xset s off -dpms 2>/dev/null
 
-[ -e "$MARK" ] && exit 0
-
-# ---- left dock: a second, vertical xfce4-panel with launchers ----
-APPS=/usr/share/applications
-pick() { for f in "$@"; do [ -e "$APPS/$f" ] && { echo "$f"; return; }; done; }
-ITEMS=(
-  "$(pick xfce4-terminal.desktop qterminal.desktop xfce4-terminal-emulator.desktop)"
-  "$(pick thunar.desktop org.xfce.thunar.desktop)"
-  "$(pick org.xfce.mousepad.desktop mousepad.desktop)"
-  "$(pick firefox-esr.desktop firefox.desktop)"
-  "$(pick kali-msfconsole.desktop)"
-  "$(pick kali-burpsuite.desktop)"
-  "$(pick kali-wireshark.desktop org.wireshark.Wireshark.desktop)"
-  "$(pick kali-nmap.desktop kali-zenmap.desktop)"
-  "$(pick kali-john.desktop)"
-  "$(pick kali-sqlmap.desktop)"
-  "$(pick xfce4-appfinder.desktop)"
-  "$(pick kali-docs.desktop)"
-)
-ids=(); n=1000
-for it in "${ITEMS[@]}"; do
-  [ -n "$it" ] || continue
-  n=$((n+1)); ids+=("$n")
-  d="$HOME/.config/xfce4/panel/launcher-$n"; mkdir -p "$d"; cp -f "$APPS/$it" "$d/$it"
-  xfconf-query -c xfce4-panel -p "/plugins/plugin-$n" -n -t string -s launcher 2>/dev/null
-  xfconf-query -c xfce4-panel -p "/plugins/plugin-$n/items" -n -t string -s "$it" --force-array 2>/dev/null
-done
-if [ "${#ids[@]}" -gt 0 ]; then
-  args=(); for i in "${ids[@]}"; do args+=(-t int -s "$i"); done
-  P=/panels/panel-2
-  xfconf-query -c xfce4-panel -p $P/position         -n -t string -s "p=5;x=0;y=0"   # p=5 = left edge
-  xfconf-query -c xfce4-panel -p $P/mode             -n -t int    -s 1                # vertical
-  xfconf-query -c xfce4-panel -p $P/length           -n -t int    -s 100
-  xfconf-query -c xfce4-panel -p $P/size             -n -t int    -s 44
-  xfconf-query -c xfce4-panel -p $P/icon-size        -n -t int    -s 28
-  xfconf-query -c xfce4-panel -p $P/position-locked  -n -t bool   -s true
-  xfconf-query -c xfce4-panel -p $P/autohide-behavior -n -t int   -s 0
-  xfconf-query -c xfce4-panel -p $P/background-style -n -t int    -s 1
-  xfconf-query -c xfce4-panel -p $P/background-rgba  -n -t double -s 0.04 -t double -s 0.07 -t double -s 0.10 -t double -s 0.85 --force-array
-  xfconf-query -c xfce4-panel -p $P/plugin-ids       -n "${args[@]}" --force-array
-  # register panel 2 next to the existing top panel(s)
-  cur=$(xfconf-query -c xfce4-panel -p /panels 2>/dev/null | grep -E '^[0-9]+$' | sort -un)
-  pargs=(); for p in $cur 2; do pargs+=(-t int -s "$p"); done
-  [ -z "$cur" ] && pargs=(-t int -s 1 -t int -s 2)
-  xfconf-query -c xfce4-panel -p /panels -n "${pargs[@]}" --force-array 2>/dev/null \
-    || xfconf-query -c xfce4-panel -p /panels "${pargs[@]}" --force-array 2>/dev/null
-  xfce4-panel -r >/dev/null 2>&1 || true
+# ---- match real Kali: single top panel, whisker (dragon) menu at far left ----
+# A left dock would cover the top panel's whisker button, so remove any we created
+# before and make sure the Kali menu button is reachable at the top-left corner.
+panels=$(xfconf-query -c xfce4-panel -p /panels 2>/dev/null | grep -E '^[0-9]+$')
+if echo "$panels" | grep -qx 2; then
+  keep=$(echo "$panels" | grep -vx 2)
+  pargs=(); for p in $keep; do pargs+=(-t int -s "$p"); done
+  [ ${#pargs[@]} -gt 0 ] && xfconf-query -c xfce4-panel -p /panels -n "${pargs[@]}" --force-array 2>/dev/null
+  xfconf-query -c xfce4-panel -p /panels/panel-2 -rR 2>/dev/null
 fi
+
+# make the top panel (panel-1) look like Kali and keep the whisker menu first
+xfconf-query -c xfce4-panel -p /panels/panel-1/position        -n -t string -s "p=6;x=0;y=0" 2>/dev/null  # top, full width
+xfconf-query -c xfce4-panel -p /panels/panel-1/length          -n -t uint   -s 100 2>/dev/null
+xfconf-query -c xfce4-panel -p /panels/panel-1/size            -n -t uint   -s 30  2>/dev/null
+xfconf-query -c xfce4-panel -p /panels/panel-1/position-locked -n -t bool   -s true 2>/dev/null
+# whisker plugin must be the first id in panel-1's plugin list
+wpid=$(xfconf-query -c xfce4-panel -p /plugins -lv 2>/dev/null | awk '/whiskermenu/{print $1}' | grep -oE '[0-9]+$' | head -1)
+if [ -n "$wpid" ]; then
+  cur=$(xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids 2>/dev/null | grep -E '^[0-9]+$')
+  rest=$(echo "$cur" | grep -vx "$wpid")
+  pargs=(-t int -s "$wpid"); for i in $rest; do pargs+=(-t int -s "$i"); done
+  xfconf-query -c xfce4-panel -p /panels/panel-1/plugin-ids -n "${pargs[@]}" --force-array 2>/dev/null
+fi
+panel_reload
+
+[ -e "$MARK" ] && exit 0
 
 mkdir -p "$(dirname "$MARK")"; date > "$MARK"
 exit 0

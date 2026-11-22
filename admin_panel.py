@@ -207,7 +207,9 @@ def build() -> None:
     # ---- Storage: what's installed and using disk, separated by component ----
     import storage
     with gr.Accordion("💾 Storage — what's installed & using disk", open=True, elem_classes=["admin-acc"]):
-        storage_view = gr.HTML(storage.storage_html, elem_id="storage-view")
+        storage_view = gr.HTML("<div style='opacity:.7;font-size:13px;padding:6px 2px'>"
+                               "Press the refresh button to calculate storage use.</div>",
+                               elem_id="storage-view")
         storage_btn = gr.Button("🔄 Refresh storage", size="sm", variant="secondary")
         storage_btn.click(storage.storage_html, None, storage_view)
 
