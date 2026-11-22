@@ -95,6 +95,220 @@ def starter_for(tool: str) -> str:
     return STARTERS.get(t) or STARTERS.get(t.replace(" ", "-")) or f"{t} --help 2>&1 | head -15"
 
 
+# ================================================================ FULL NETHUNTER / KALIGPT ARSENAL
+# Everything the Kali NetHunter 2026 cheat-sheets promise, grouped like the carousel. Each entry maps
+# a tool to (1) the apt package that installs it and (2) the binary we check with `command -v` to prove
+# it is really there. This is what makes the "100% work" promise true: install_all() installs them all,
+# readiness() shows a green/red grid, and every tool has a safe starter command above.
+#
+#   {id, name, pkg (apt package), bin (binary to verify), cat (category), gui (bool)}
+ARSENAL = [
+    # ── Recon / Network scanning ───────────────────────────────────────────────
+    {"id": "nmap",        "name": "Nmap",          "pkg": "nmap",                 "bin": "nmap",        "cat": "Recon / Scanning"},
+    {"id": "masscan",     "name": "Masscan",       "pkg": "masscan",              "bin": "masscan",     "cat": "Recon / Scanning"},
+    {"id": "netdiscover", "name": "Netdiscover",   "pkg": "netdiscover",          "bin": "netdiscover", "cat": "Recon / Scanning"},
+    {"id": "netcat",      "name": "Netcat",        "pkg": "netcat-traditional",   "bin": "nc",          "cat": "Recon / Scanning"},
+    {"id": "hping3",      "name": "hping3",        "pkg": "hping3",               "bin": "hping3",      "cat": "Recon / Scanning"},
+    {"id": "dnsrecon",    "name": "DNSRecon",      "pkg": "dnsrecon",             "bin": "dnsrecon",    "cat": "Recon / Scanning"},
+    {"id": "theharvester","name": "theHarvester",  "pkg": "theharvester",         "bin": "theHarvester","cat": "Recon / Scanning"},
+    {"id": "recon-ng",    "name": "Recon-ng",      "pkg": "recon-ng",             "bin": "recon-ng",    "cat": "Recon / Scanning"},
+    {"id": "enum4linux",  "name": "enum4linux",    "pkg": "enum4linux",           "bin": "enum4linux",  "cat": "Recon / Scanning"},
+    # ── Vulnerability scanning ─────────────────────────────────────────────────
+    {"id": "nikto",       "name": "Nikto",         "pkg": "nikto",                "bin": "nikto",       "cat": "Vuln scanning"},
+    {"id": "nuclei",      "name": "Nuclei",        "pkg": "nuclei",               "bin": "nuclei",      "cat": "Vuln scanning"},
+    {"id": "wpscan",      "name": "WPScan",        "pkg": "wpscan",               "bin": "wpscan",      "cat": "Vuln scanning"},
+    {"id": "whatweb",     "name": "WhatWeb",       "pkg": "whatweb",              "bin": "whatweb",     "cat": "Vuln scanning"},
+    {"id": "gobuster",    "name": "Gobuster",      "pkg": "gobuster",             "bin": "gobuster",    "cat": "Vuln scanning"},
+    {"id": "ffuf",        "name": "ffuf",          "pkg": "ffuf",                 "bin": "ffuf",        "cat": "Vuln scanning"},
+    {"id": "feroxbuster", "name": "feroxbuster",   "pkg": "feroxbuster",          "bin": "feroxbuster", "cat": "Vuln scanning"},
+    {"id": "dirb",        "name": "dirb",          "pkg": "dirb",                 "bin": "dirb",        "cat": "Vuln scanning"},
+    {"id": "wfuzz",       "name": "wfuzz",         "pkg": "wfuzz",                "bin": "wfuzz",       "cat": "Vuln scanning"},
+    # ── Exploitation ───────────────────────────────────────────────────────────
+    {"id": "metasploit",  "name": "Metasploit",    "pkg": "metasploit-framework", "bin": "msfconsole",  "cat": "Exploitation"},
+    {"id": "searchsploit","name": "SearchSploit",  "pkg": "exploitdb",            "bin": "searchsploit","cat": "Exploitation"},
+    {"id": "sqlmap",      "name": "sqlmap",        "pkg": "sqlmap",               "bin": "sqlmap",      "cat": "Exploitation"},
+    {"id": "netexec",     "name": "NetExec",       "pkg": "netexec",              "bin": "netexec",     "cat": "Exploitation"},
+    {"id": "impacket",    "name": "Impacket",      "pkg": "impacket-scripts",     "bin": "impacket-secretsdump", "cat": "Exploitation"},
+    {"id": "evil-winrm",  "name": "Evil-WinRM",    "pkg": "evil-winrm",           "bin": "evil-winrm",  "cat": "Exploitation"},
+    {"id": "setoolkit",   "name": "SET Toolkit",   "pkg": "set",                  "bin": "setoolkit",   "cat": "Exploitation"},
+    # ── Password / hash cracking ───────────────────────────────────────────────
+    {"id": "hydra",       "name": "Hydra",         "pkg": "hydra",                "bin": "hydra",       "cat": "Password attacks"},
+    {"id": "john",        "name": "John the Ripper","pkg": "john",                "bin": "john",        "cat": "Password attacks"},
+    {"id": "hashcat",     "name": "Hashcat",       "pkg": "hashcat",              "bin": "hashcat",     "cat": "Password attacks"},
+    {"id": "medusa",      "name": "Medusa",        "pkg": "medusa",               "bin": "medusa",      "cat": "Password attacks"},
+    {"id": "ncrack",      "name": "Ncrack",        "pkg": "ncrack",               "bin": "ncrack",      "cat": "Password attacks"},
+    {"id": "crunch",      "name": "Crunch",        "pkg": "crunch",               "bin": "crunch",      "cat": "Password attacks"},
+    {"id": "cewl",        "name": "CeWL",          "pkg": "cewl",                 "bin": "cewl",        "cat": "Password attacks"},
+    {"id": "hashid",      "name": "hashid",        "pkg": "hashid",               "bin": "hashid",      "cat": "Password attacks"},
+    # ── Wireless / Wi-Fi / Bluetooth / Wardriving ──────────────────────────────
+    {"id": "aircrack-ng", "name": "Aircrack-ng",   "pkg": "aircrack-ng",          "bin": "aircrack-ng", "cat": "Wireless"},
+    {"id": "wifite",      "name": "Wifite",        "pkg": "wifite",               "bin": "wifite",      "cat": "Wireless"},
+    {"id": "reaver",      "name": "Reaver",        "pkg": "reaver",               "bin": "reaver",      "cat": "Wireless"},
+    {"id": "pixiewps",    "name": "PixieWPS",      "pkg": "pixiewps",             "bin": "pixiewps",    "cat": "Wireless"},
+    {"id": "kismet",      "name": "Kismet",        "pkg": "kismet",               "bin": "kismet",      "cat": "Wireless / Wardriving"},
+    {"id": "gpsd",        "name": "GPSd (wardrive)","pkg": "gpsd",                "bin": "gpsd",        "cat": "Wireless / Wardriving"},
+    {"id": "bluez",       "name": "BlueZ (Bluetooth)","pkg": "bluez",             "bin": "bluetoothctl","cat": "Bluetooth"},
+    {"id": "spooftooph",  "name": "Spooftooph",    "pkg": "spooftooph",           "bin": "spooftooph",  "cat": "Bluetooth"},
+    {"id": "macchanger",  "name": "macchanger",    "pkg": "macchanger",           "bin": "macchanger",  "cat": "Wireless"},
+    # ── Sniffing / MITM ────────────────────────────────────────────────────────
+    {"id": "tshark",      "name": "tshark",        "pkg": "tshark",               "bin": "tshark",      "cat": "Sniffing / MITM"},
+    {"id": "tcpdump",     "name": "tcpdump",       "pkg": "tcpdump",              "bin": "tcpdump",     "cat": "Sniffing / MITM"},
+    {"id": "bettercap",   "name": "Bettercap",     "pkg": "bettercap",            "bin": "bettercap",   "cat": "Sniffing / MITM"},
+    {"id": "responder",   "name": "Responder",     "pkg": "responder",            "bin": "responder",   "cat": "Sniffing / MITM"},
+    {"id": "ettercap",    "name": "Ettercap",      "pkg": "ettercap-text-only",   "bin": "ettercap",    "cat": "Sniffing / MITM"},
+    # ── Forensics / Reversing ──────────────────────────────────────────────────
+    {"id": "binwalk",     "name": "Binwalk",       "pkg": "binwalk",              "bin": "binwalk",     "cat": "Forensics / RE"},
+    {"id": "radare2",     "name": "radare2",       "pkg": "radare2",              "bin": "r2",          "cat": "Forensics / RE"},
+    {"id": "foremost",    "name": "Foremost",      "pkg": "foremost",             "bin": "foremost",    "cat": "Forensics / RE"},
+    {"id": "exiftool",    "name": "ExifTool",      "pkg": "libimage-exiftool-perl","bin": "exiftool",   "cat": "Forensics / RE"},
+    # ── GUI tools (install, but open from the 🐉 Kali Desktop) ──────────────────
+    {"id": "wireshark",   "name": "Wireshark",     "pkg": "wireshark",            "bin": "wireshark",   "cat": "GUI", "gui": True},
+    {"id": "burpsuite",   "name": "Burp Suite",    "pkg": "burpsuite",            "bin": "burpsuite",   "cat": "GUI", "gui": True},
+]
+ARSENAL_BY_ID = {t["id"]: t for t in ARSENAL}
+
+# Extra safe starter commands for the newly added tools (localhost / lab-only, non-interactive).
+STARTERS.update({
+    "masscan": "masscan --version 2>&1 | head -4",
+    "netdiscover": "netdiscover -h 2>&1 | head -12",
+    "hping3": "hping3 --version 2>&1 | head -4",
+    "dnsrecon": "dnsrecon --version 2>&1 | head -3 || dnsrecon -h 2>&1 | head -8",
+    "enum4linux": "enum4linux -h 2>&1 | head -12",
+    "searchsploit": "searchsploit --version 2>&1 | head -4 && searchsploit -u 2>&1 | tail -3",
+    "netexec": "netexec --version 2>&1 | head -3",
+    "evil-winrm": "evil-winrm --version 2>&1 | head -3",
+    "setoolkit": "echo 'SET is interactive — launch with: sudo setoolkit (own lab only).'",
+    "crunch": "crunch 1 1 abc 2>&1 | head -6",
+    "cewl": "cewl --help 2>&1 | head -10",
+    "wifite": "wifite --help 2>&1 | head -15",
+    "reaver": "reaver -h 2>&1 | head -12",
+    "pixiewps": "pixiewps --help 2>&1 | head -10",
+    "kismet": "kismet --version 2>&1 | head -4",
+    "gpsd": "gpsd --version 2>&1 | head -4",
+    "bluez": "bluetoothctl --version 2>&1 | head -3",
+    "spooftooph": "spooftooph -h 2>&1 | head -10",
+    "macchanger": "macchanger --help 2>&1 | head -10",
+    "tcpdump": "tcpdump --version 2>&1 | head -4",
+    "ettercap": "ettercap --version 2>&1 | head -4",
+    "foremost": "foremost -V 2>&1 | head -3",
+    "exiftool": "exiftool -ver",
+    "dirb": "dirb 2>&1 | head -8",
+})
+
+
+def _pkg_list() -> list:
+    """Unique apt packages for the whole arsenal, in a stable order."""
+    seen, out = set(), []
+    for t in ARSENAL:
+        p = t["pkg"]
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def install_all_command() -> str:
+    """One non-interactive command that updates apt and installs the ENTIRE arsenal.
+    `DEBIAN_FRONTEND=noninteractive` + `|| true` on update so a slow mirror never blocks the install,
+    and `--no-install-recommends` keeps it lean. Works on Kali and NetHunter (both Debian/apt)."""
+    pkgs = " ".join(_pkg_list())
+    return (
+        "sudo DEBIAN_FRONTEND=noninteractive apt-get update -y || true; "
+        "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
+        f"{pkgs}; "
+        "echo '---DONE---'; echo 'Arsenal install attempted. Run the readiness check to confirm.'"
+    )
+
+
+def ensure_command(tool_id: str) -> str:
+    """Install ONE tool if its binary is missing, then prove it's there."""
+    t = ARSENAL_BY_ID.get(tool_id)
+    if not t:
+        return f"echo 'Unknown tool: {tool_id}'"
+    return (f"command -v {t['bin']} >/dev/null 2>&1 || "
+            f"sudo DEBIAN_FRONTEND=noninteractive apt-get install -y {t['pkg']}; "
+            f"command -v {t['bin']} && echo 'READY: {t['name']}' || echo 'MISSING: {t['name']}'")
+
+
+# A single marker line per tool: "<id>|<name>|<cat>|OK" or "...|NO". Easy to parse from one SSH run.
+def readiness_command() -> str:
+    checks = []
+    for t in ARSENAL:
+        checks.append(
+            f"command -v {t['bin']} >/dev/null 2>&1 "
+            f"&& echo '{t['id']}|{t['name']}|{t['cat']}|OK' "
+            f"|| echo '{t['id']}|{t['name']}|{t['cat']}|NO'"
+        )
+    return "; ".join(checks)
+
+
+def parse_readiness(output: str) -> list:
+    """Turn the readiness_command output into [{id,name,cat,ok}] rows."""
+    rows = []
+    for line in (output or "").splitlines():
+        line = line.strip()
+        if line.count("|") == 3 and line.endswith(("|OK", "|NO")):
+            tid, name, cat, state = line.split("|")
+            rows.append({"id": tid, "name": name, "cat": cat, "ok": state == "OK"})
+    return rows
+
+
+def readiness_html(rows: list) -> str:
+    """A compact green/red grid of the arsenal, grouped by category."""
+    if not rows:
+        return ("<div class='nh-ready-empty'>Readiness innum check pannala. "
+                "'✅ Check readiness' press pannu — Kali-la ella tool-um irukka nu grid kaamikum.</div>")
+    ok = sum(1 for r in rows if r["ok"])
+    total = len(rows)
+    pct = int(round(ok * 100 / total)) if total else 0
+    bar = (f"<div class='nh-ready-bar'><div class='nh-ready-fill' style='width:{pct}%'></div></div>"
+           f"<div class='nh-ready-pct'>{ok}/{total} ready · <b>{pct}%</b></div>")
+    cats, order = {}, []
+    for r in rows:
+        if r["cat"] not in cats:
+            cats[r["cat"]] = []
+            order.append(r["cat"])
+        cats[r["cat"]].append(r)
+    blocks = []
+    for cat in order:
+        chips = "".join(
+            f"<span class='nh-chip {'ok' if r['ok'] else 'no'}'>"
+            f"{'✅' if r['ok'] else '⬇️'} {r['name']}</span>"
+            for r in cats[cat])
+        blocks.append(f"<div class='nh-cat'><div class='nh-cat-t'>{cat}</div>"
+                      f"<div class='nh-chips'>{chips}</div></div>")
+    missing = [r["name"] for r in rows if not r["ok"]]
+    foot = ("<div class='nh-ready-foot ok'>🎉 Ella tool-um ready — 100%. Sollu, Nanban run pannidum.</div>"
+            if not missing else
+            f"<div class='nh-ready-foot no'>⬇️ {len(missing)} tool install aaganum: "
+            f"{', '.join(missing[:12])}{'…' if len(missing) > 12 else ''}. "
+            "'🔧 Install &amp; verify ALL' press pannu.</div>")
+    return f"<div class='nh-ready'>{bar}{''.join(blocks)}{foot}</div>"
+
+
+def install_all(auto_fix: bool = False):
+    """Stream the whole-arsenal install on Kali (reuses smart_run — same safety + one-shot exec)."""
+    yield ("🔧 **Full arsenal install** starting on Kali… idhu konja neram edukkum "
+           "(apt download). Mudinjadhum readiness check panni confirm pannu.\n")
+    for out in smart_run(install_all_command(), auto_fix=auto_fix):
+        yield out
+
+
+def check_readiness():
+    """Run the readiness probe on Kali and return parsed rows (for the HTML grid)."""
+    import kali_panel as kp
+    import servers
+    try:
+        host = servers.connect(kp.KALI)
+    except Exception:
+        return None
+    try:
+        r = host.run(readiness_command(), timeout=90)
+        return parse_readiness(kp._clean_term(r.output))
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------- AI command + auto-fix
 
 _LAB_SYS = (

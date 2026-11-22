@@ -445,6 +445,54 @@ def self_check() -> str:
     return doctor.quick_summary()
 
 
+def run_on_kali(command: str) -> str:
+    """Run ONE shell command LIVE on the connected Kali Linux / NetHunter box and return its output.
+
+    Use this to actually execute a security tool the user asked for (nmap, metasploit, sqlmap, hydra,
+    nuclei, gobuster, nikto, aircrack-ng, searchsploit, kismet, etc.) against the user's OWN lab or
+    localhost (127.0.0.1) or a target they are authorised to test. If a tool is missing or the command
+    fails, it is auto-fixed and retried once. Give a single, complete, non-interactive command.
+
+    Args:
+        command: The exact shell command to run on Kali, e.g. 'nmap -sV -T4 127.0.0.1'
+    """
+    try:
+        import india_lab_tools as ilt
+    except Exception as e:
+        return f"Kali runner not available: {e}"
+    final = ""
+    try:
+        for out in ilt.smart_run(command, auto_fix=True):
+            final = out
+    except Exception as e:
+        return f"Error running on Kali: {e}"
+    return (final or "(no output)")[:MAX_RESULT_CHARS]
+
+
+def install_kali_tools() -> str:
+    """Install and verify the FULL Kali NetHunter arsenal on the connected Kali box, then report which
+    tools are ready. Use this when the user asks to set up, install, update, or make all the hacking
+    tools work / ready (nmap, metasploit, wireshark, hydra, sqlmap, aircrack, kismet, searchsploit…).
+    """
+    try:
+        import india_lab_tools as ilt
+    except Exception as e:
+        return f"Installer not available: {e}"
+    log = ""
+    try:
+        for out in ilt.install_all(auto_fix=False):
+            log = out
+    except Exception as e:
+        return f"Error during install: {e}"
+    rows = ilt.check_readiness() or []
+    ok = sum(1 for r in rows if r["ok"])
+    missing = [r["name"] for r in rows if not r["ok"]]
+    summary = f"\n\nReadiness: {ok}/{len(rows)} tools ready."
+    if missing:
+        summary += " Missing: " + ", ".join(missing)
+    return (log[-4000:] + summary)[:MAX_RESULT_CHARS]
+
+
 def search_past_chats(query: str, user: str = "") -> str:
     """Search the user's own conversations with you from the last 7 days. Use it when they refer
     back to something discussed earlier ("that script from yesterday", "what did we decide about X").
@@ -462,7 +510,7 @@ ALL_TOOLS = {f.__name__: f for f in [
     add_task, list_tasks, complete_task,
     remember, forget, search_past_chats,
     search_documents, list_documents,
-    self_check,
+    self_check, run_on_kali, install_kali_tools,
 ]}
 
 TOOL_LABELS = {
@@ -482,6 +530,8 @@ TOOL_LABELS = {
     "forget": "🧹 Removing from memory",
     "search_documents": "📚 Searching your documents",
     "self_check": "🩺 Checking & fixing Nanban",
+    "run_on_kali": "🐉 Running on Kali",
+    "install_kali_tools": "🔧 Installing Kali arsenal",
     "set_plan": "📋 Making a plan",
     "complete_step": "✔ Step done",
     "run_command": "▶️ Running a command",

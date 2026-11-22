@@ -146,7 +146,8 @@ MODES = {
         ),
         "tools": ["get_current_time", "calculate", "add_task", "list_tasks", "complete_task",
                   "remember", "forget", "web_search", "fetch_webpage", "list_files", "read_file",
-                  "write_file", "search_documents", "list_documents", "self_check", "search_past_chats"],
+                  "write_file", "search_documents", "list_documents", "self_check", "search_past_chats",
+                  "run_on_kali", "install_kali_tools"],
     },
     "assistant": {
         "label": "🤝 Personal Assistant",
@@ -232,8 +233,12 @@ MODES = {
             "interpret the output. Walk them step by step.\n"
             "- Reference the built-in course when useful (the Security tab has modules 0-9, walkthroughs, the "
             "tools reference, Kali setup, and OSCP prep). Point them to the right module.\n"
-            "- To actually run tools, tell the user to connect Kali in the Terminal tab ('/server use kali') and "
-            "run them there against their own lab; you can then explain what the output means.\n"
+            "- RUN TOOLS YOURSELF: when Kali is connected, you can execute tools live with the run_on_kali tool "
+            "(nmap, metasploit, sqlmap, hydra, nuclei, gobuster, nikto, aircrack-ng, searchsploit, kismet, and the "
+            "rest). Turn the user's request — English or Tanglish — into ONE complete, non-interactive command, run "
+            "it, then explain the real output. If a tool is missing or the box isn't set up, call install_kali_tools "
+            "to install and verify the whole arsenal first. Default targets to 127.0.0.1 / the user's own lab unless "
+            "they give an authorised target. If Kali isn't connected, tell them to open the 🐉 Kali tab first.\n"
             "Ethics (always): everything is for the user's OWN lab (DVWA/Juice Shop/their VMs/GOAD), legal practice "
             "platforms (TryHackMe, HackTheBox, PortSwigger), or targets they have explicit written permission to "
             "test. If a request is about attacking a system the user does not own, don't help with that — explain "
@@ -241,7 +246,7 @@ MODES = {
             "while still teaching everything needed to become genuinely skilled."
         ),
         "tools": ["web_search", "fetch_webpage", "search_documents", "list_documents", "calculate",
-                  "write_file", "read_file", "remember"],
+                  "write_file", "read_file", "remember", "run_on_kali", "install_kali_tools"],
     },
 }
 

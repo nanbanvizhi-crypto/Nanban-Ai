@@ -62,6 +62,26 @@ _INLINE_CSS = """<style>
 #il-actionbar button { font-size: .86rem !important; }
 #il-actout { min-height: 1.5em; }
 @media (max-width: 640px) { .il-hero h1 { font-size: 1.5rem !important; } }
+/* ---- NetHunter arsenal readiness grid ---- */
+.nh-ready { font-size: .85rem; }
+.nh-ready-bar { height: 10px; border-radius: 999px; background: rgba(120,120,120,.22); overflow: hidden; margin: 2px 0 4px; }
+.nh-ready-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg,#16a34a,#a3e635); transition: width .4s ease; }
+.nh-ready-pct { font-size: .8rem; margin-bottom: 10px; color: var(--body-text-color-subdued,#6b7280); }
+.nh-cat { margin: 8px 0; }
+.nh-cat-t { font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin-bottom: 4px; }
+.nh-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.nh-chip { font-size: .74rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1px solid; }
+.nh-chip.ok { color: #16a34a; background: rgba(22,163,74,.10); border-color: rgba(22,163,74,.30); }
+.nh-chip.no { color: #c0392b; background: rgba(192,57,43,.08); border-color: rgba(192,57,43,.28); }
+.nh-ready-foot { margin-top: 10px; font-size: .82rem; padding: 8px 11px; border-radius: 12px; }
+.nh-ready-foot.ok { color: #15803d; background: rgba(22,163,74,.10); border: 1px solid rgba(22,163,74,.25); }
+.nh-ready-foot.no { color: #9a6a00; background: rgba(214,158,46,.12); border: 1px solid rgba(214,158,46,.30); }
+.nh-ready-empty { font-size: .84rem; color: var(--body-text-color-subdued,#6b7280); padding: 10px 2px; }
+#il-nethunter { border: 1px solid var(--border-color-primary,#e5e7eb); border-radius: 16px; padding: 14px 16px; margin-top: 12px;
+  background: linear-gradient(135deg, rgba(220,20,60,.06), rgba(14,116,144,.05)); }
+.nh-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.nh-head-t { font-weight: 800; font-size: 1.02rem; }
+.nh-head-s { font-size: .74rem; color: var(--body-text-color-subdued,#6b7280); }
 </style>"""
 
 
@@ -154,6 +174,17 @@ def build():
                 stop_btn = gr.Button("■ Stop", variant="secondary", scale=1, size="sm", elem_id="il-cmd-stop")
             autofix = gr.Checkbox(value=True, label="🤖 AI auto-fix on error (one-shot) · 🛡️ own lab / localhost only",
                                   container=False, elem_id="il-autofix")
+
+        # ---------------- NetHunter arsenal: make EVERY tool 100% ready ----------------
+        with gr.Column(elem_id="il-nethunter"):
+            gr.HTML('<div class="nh-head"><span class="nh-head-t">🐉 Kali NetHunter arsenal — 100% ready</span>'
+                    '<span class="nh-head-s">Install &amp; verify every tool (nmap, metasploit, wireshark, '
+                    'kismet, searchsploit, hydra, sqlmap, aircrack, gobuster, nikto, bluetooth, wardriving…) '
+                    '— Kali + NetHunter (apt).</span></div>')
+            with gr.Row(elem_id="il-nhrow"):
+                install_btn = gr.Button("🔧 Install & verify ALL tools", variant="primary", scale=2, size="sm")
+                ready_btn = gr.Button("✅ Check readiness", variant="secondary", scale=1, size="sm")
+            ready_grid = gr.HTML(ilt.readiness_html([]), elem_id="il-readygrid")
 
         # ---------------- hands-on workbench ----------------
         with gr.Column(elem_id="il-workbench"):
@@ -266,6 +297,25 @@ def build():
             pass
         return gr.update()
     stop_btn.click(_stop, None, lab_out, cancels=[op_evt, run_evt])
+
+    # ---------------- NetHunter arsenal: install all + readiness ----------------
+    def _install_all():
+        for out in ilt.install_all(auto_fix=False):
+            yield out
+    inst_evt = install_btn.click(_install_all, None, lab_out)
+
+    def _check_ready():
+        yield gr.update()  # keep current grid while probing
+        rows = ilt.check_readiness()
+        if rows is None:
+            yield gr.update(value="<div class='nh-ready-empty'>🟠 Kali connect aagala. 🐉 Kali tab-la "
+                                  "konja neram wait pannu (desktop start aagum), illa Kali-la "
+                                  "<code>sudo service ssh start</code> run panni thirumba try pannu.</div>")
+            return
+        yield gr.update(value=ilt.readiness_html(rows))
+    ready_btn.click(_check_ready, None, ready_grid)
+    # after an install finishes, refresh the readiness grid automatically
+    inst_evt.then(_check_ready, None, ready_grid)
 
     # live AI lab actions
     def _make_action(kind):
