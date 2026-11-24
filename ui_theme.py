@@ -912,3 +912,304 @@ body.nb-attach #attach-btn { border-color: var(--nb-accent, #b7e23c) !important;
 #il-autofix label { font-size: 12px !important; color: var(--nx-dim, #8b98b3) !important; }
 @media (max-width: 760px) { #il-labout textarea { height: 220px !important; } #il-oprow, #il-cmdrow { flex-wrap: wrap !important; } }
 """
+
+
+# =====================================================================================
+#  UI v6 — MOBILE SHELL (phones + small tablets, <= 900px)
+#  A fixed top app bar (menu · section title · new chat · Vizhi · more), the sidebar as a
+#  slide-in drawer with a dimmed backdrop, edge-to-edge content, 44px touch targets, safe-area
+#  insets for notches / gesture bars, and a chat that always fits the visible screen.
+#  The markup for #nb-mbar / #nb-scrim is created in web_extras.INIT_JS, which also injects
+#  this stylesheet a second time (this Gradio build can drop some css= rules).
+# =====================================================================================
+MOBILE_CSS = """
+#nb-mbar, #nb-scrim { display: none; }
+
+@media (max-width: 900px) {
+  :root { --nb-bar-h: 52px; --nb-safe-t: env(safe-area-inset-top, 0px); --nb-safe-b: env(safe-area-inset-bottom, 0px);
+    --nb-pad-l: max(12px, env(safe-area-inset-left, 0px)); --nb-pad-r: max(12px, env(safe-area-inset-right, 0px)); }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  html, body { overscroll-behavior-y: none; overflow-x: hidden !important; max-width: 100vw; }
+  body { -webkit-tap-highlight-color: transparent; }
+  body.nb-drawer { overflow: hidden !important; }
+
+  /* ---------- edge-to-edge page: no 32px side gutters, room for the app bar ---------- */
+  .gradio-container .main.app, .gradio-container > .main, .gradio-container .main.fillable {
+    padding: calc(var(--nb-bar-h) + var(--nb-safe-t) + 8px) var(--nb-pad-r) 0 var(--nb-pad-l) !important;
+    max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+  .gradio-container .sidebar-parent, .gradio-container .sidebar-parent:has(.sidebar.open) {
+    padding-left: 0 !important; padding-right: 0 !important; min-width: 0 !important; }
+  .contain, .contain > .column { min-width: 0 !important; max-width: 100% !important; }
+  .contain > .column { padding: 0 !important; }
+  .tabitem { padding-top: 0 !important; }
+  .tabitem > .column { padding-right: 0 !important; padding-bottom: calc(20px + var(--nb-safe-b)) !important; }
+  .tabitem > .column:has(> #chat-col), .tabitem > .column:has(#composer) { padding-bottom: 0 !important; }
+
+  /* ---------- top app bar ---------- */
+  #nb-mbar { display: flex; align-items: center; gap: 4px; position: fixed; top: 0; left: 0; right: 0; z-index: 900;
+    height: calc(var(--nb-bar-h) + var(--nb-safe-t)); box-sizing: border-box;
+    padding: var(--nb-safe-t) max(6px, env(safe-area-inset-right, 0px)) 0 max(6px, env(safe-area-inset-left, 0px));
+    background: rgba(250,251,253,.86); border-bottom: 1px solid var(--nx-line);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3); }
+  .dark #nb-mbar { background: rgba(6,9,18,.84); }
+  #nb-mbar, #nb-mbar button { font-family: var(--font, "Plus Jakarta Sans"), system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #nb-mbar button.nbm-btn { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; border: none; background: transparent;
+    color: var(--body-text-color); display: grid; place-items: center; cursor: pointer; padding: 0; margin: 0;
+    font-size: 20px; line-height: 1; touch-action: manipulation; transition: background .15s, transform .1s; }
+  #nb-mbar button.nbm-btn:active { background: var(--nx-hover); transform: scale(.94); }
+  #nb-mbar button.nbm-btn svg { width: 22px; height: 22px; display: block; }
+  #nb-mb-title { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 0 4px; height: 42px;
+    border: none; background: transparent; color: var(--body-text-color); text-align: left; cursor: pointer; border-radius: 12px; }
+  #nb-mb-title:active { background: var(--nx-hover); }
+  #nb-mb-title .i { flex: 0 0 auto; font-size: 18px; line-height: 1; }
+  #nb-mb-title .tx { min-width: 0; display: flex; flex-direction: column; justify-content: center; line-height: 1.15; }
+  #nb-mb-title .t { font-weight: 800; font-size: 15.5px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #nb-mb-title .s { font: 500 10.5px var(--nx-mono); letter-spacing: .03em; color: var(--nx-dim); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  #nb-mb-title .s:empty { display: none; }
+  #nb-mb-orb { flex: 0 0 42px; width: 42px; height: 42px; display: grid; place-items: center; }
+  #nb-mb-orb #nb-vizhi { width: 34px !important; height: 34px !important; font-size: 16px !important;
+    box-shadow: 0 0 0 1px rgba(46,230,214,.4), 0 3px 12px rgba(46,230,214,.28) !important; }
+
+  /* ---------- sidebar = slide-in drawer ---------- */
+  .gradio-container .sidebar-parent .sidebar:not(.right), .gradio-container .sidebar:not(.right) {
+    width: min(86vw, 330px) !important; left: 0 !important; top: 0 !important; height: 100dvh !important;
+    transform: translateX(-104%) !important; transition: transform .26s cubic-bezier(.22,.8,.26,1) !important;
+    z-index: 1001 !important; box-shadow: none !important; background: var(--nx-solid) !important;
+    border-right: 1px solid var(--nx-line) !important; will-change: transform; }
+  .gradio-container .sidebar-parent .sidebar.open:not(.right), .gradio-container .sidebar.open:not(.right) {
+    transform: none !important; box-shadow: 18px 0 60px rgba(0,0,0,.34) !important; }
+  body:not(.nb-ready) .gradio-container .sidebar { visibility: hidden !important; }
+  .gradio-container .sidebar .toggle-button { display: none !important; }
+  .sidebar .sidebar-content { min-height: 0 !important; height: 100% !important; box-sizing: border-box !important;
+    padding: calc(14px + var(--nb-safe-t)) 12px calc(14px + var(--nb-safe-b)) max(12px, env(safe-area-inset-left, 0px)) !important;
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  #nb-scrim { display: block; position: fixed; inset: 0; z-index: 1000; background: rgba(4,7,14,.56);
+    -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .24s ease; }
+  body.nb-drawer #nb-scrim { opacity: 1; pointer-events: auto; }
+  #new-chat { height: 46px !important; font-size: 13.5px !important; }
+  .nbn-item { min-height: 46px; padding: 0 12px; font-size: 15px; border-radius: 12px; box-sizing: border-box; }
+  .nbn-item:hover { transform: none; }
+  .nbn-ico { width: 24px; font-size: 18px; }
+  .nbn-chev { font-size: 13px; padding: 12px 10px; margin-right: -8px; }
+  .nbn-sub { margin: 2px 0 6px 23px; }
+  .nbn-subitem { min-height: 42px; padding: 0 10px; font-size: 14px; border-radius: 10px; box-sizing: border-box; }
+  .nbn-sico { width: 20px; font-size: 15px; }
+  #nb-hist { max-height: 34dvh; }
+  .nbh-item { min-height: 42px; padding: 0 6px 0 10px; font-size: 14px; box-sizing: border-box; }
+  .nbh-del { opacity: .5 !important; font-size: 13px; padding: 9px 11px; }
+  .sidebar .gr-accordion > .label-wrap { min-height: 46px !important; padding: 0 12px !important; }
+  .sidebar .gr-accordion > .label-wrap > span, .sidebar .gr-accordion > .label-wrap span:first-child { font-size: 15px !important; }
+  .nb-sec-title { padding: 16px 10px 6px; }
+
+  /* ---------- floating tools → a small menu under the "more" button ---------- */
+  #nb-tools { top: calc(var(--nb-bar-h) + var(--nb-safe-t) + 6px) !important; right: max(8px, env(safe-area-inset-right, 0px)) !important;
+    bottom: auto !important; left: auto !important; flex-direction: row !important; gap: 8px !important; padding: 8px !important;
+    border-radius: 16px; background: var(--nx-solid); border: 1px solid var(--nx-line);
+    box-shadow: 0 16px 44px rgba(0,0,0,.34); display: none !important; z-index: 950 !important; }
+  body.nb-more #nb-tools { display: flex !important; animation: nbIn .16s ease both; }
+  #nb-tools button, #nb-tools button:not(#nb-vizhi) { width: 46px !important; height: 46px !important; font-size: 19px !important;
+    border-radius: 13px !important; box-shadow: none !important; }
+  #nb-jcap { top: calc(var(--nb-bar-h) + var(--nb-safe-t) + 8px) !important; bottom: auto !important;
+    left: var(--nb-pad-l) !important; right: var(--nb-pad-r) !important; max-width: none !important; font-size: 13px !important; z-index: 940 !important; }
+  #nb-cmdbox { top: calc(var(--nb-bar-h) + var(--nb-safe-t) + 8px) !important; bottom: auto !important;
+    left: var(--nb-pad-l) !important; right: var(--nb-pad-r) !important; width: auto !important; z-index: 960 !important; }
+  #nb-cmdbox input { font-size: 16px !important; min-height: 44px; }
+  #nb-welcome { bottom: calc(16px + var(--nb-safe-b)) !important; }
+
+  /* ---------- chat ---------- */
+  #chat-col { max-width: 100% !important; gap: 8px !important; padding-bottom: 0 !important; }
+  #mode-row { flex-wrap: nowrap !important; padding: 0 !important; border: none !important; background: transparent !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; gap: 8px !important; min-height: 36px; }
+  #mode-row > div:has(#mode-info), #mode-row > #mode-info { min-width: 0 !important; }
+  #mode-info p { gap: 0 !important; }
+  .nb-mode-about { display: none !important; }
+  .nb-mode-chip { display: inline-flex; align-items: center; height: 34px; padding: 0 13px; font-size: 12px; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; cursor: pointer; }
+  .nb-mode-chip::after { content: "▾"; margin-left: 7px; opacity: .7; font-size: 10px; }
+  #reply-lang { flex: 0 0 160px !important; min-width: 160px !important; max-width: 160px !important; height: 36px !important; min-height: 36px !important; }
+  #reply-lang .wrap { min-height: 34px !important; height: 34px !important; padding: 0 !important; }
+  #reply-lang .wrap-inner { position: relative !important; padding: 0 26px 0 10px !important; gap: 0 !important; align-items: center !important;
+    min-height: 34px !important; height: 34px !important; flex-wrap: nowrap !important; }
+  #reply-lang .secondary-wrap { align-items: center !important; min-width: 0 !important; }
+  #reply-lang input { height: 32px !important; font-size: 12px !important; margin: 0 !important; padding: 0 2px !important; min-width: 0 !important; text-overflow: ellipsis; }
+  #reply-lang .secondary-wrap { flex: 1 1 auto !important; width: 100% !important; }
+  #reply-lang .icon-wrap { position: absolute !important; right: 7px !important; top: 50% !important; left: auto !important;
+    transform: translateY(-50%) !important; margin: 0 !important; width: 18px !important; height: 18px !important; }
+  #reply-lang .icon-wrap svg { position: static !important; width: 18px !important; height: 18px !important; }
+  #allow-actions { padding: 10px 12px; }
+  #chat { height: var(--nb-chat-h, calc(100dvh - 268px - var(--nb-safe-t) - var(--nb-safe-b))) !important; min-height: 150px !important; }
+  #chat .message-wrap { padding: 4px 0 !important; gap: 10px !important; }
+  #chat .bot-row .bot { padding: 2px 0 2px 13px !important; }
+  #chat .bot, #chat .bot.message, #chat .bot .prose { font-size: 15.5px !important; line-height: 1.6 !important; }
+  #chat .user, #chat .user.message { font-size: 15.5px !important; max-width: 86% !important; }
+  #chat pre code, #chat code { font-size: 12.5px !important; }
+  #chat .message-buttons button, #chat .icon-button { opacity: .7; min-width: 32px; min-height: 32px; }
+  .nb-hero { gap: 12px; padding: 3vh 6px 1vh; }
+  .nb-hero-orb { width: 68px; height: 68px; border-radius: 21px; font-size: 24px; }
+  .nb-hero-title { font-size: 22px !important; letter-spacing: .26em; padding-left: .26em; }
+  .nb-hero-sub { font-size: 14px; line-height: 1.5; max-width: 300px; }
+  .nb-hero-stats { gap: 6px; }
+  .nb-hero-stats span { font-size: 10px; padding: 5px 10px; }
+
+  #composer { padding: 6px 0 calc(8px + var(--nb-safe-b)) !important; gap: 8px !important;
+    background: linear-gradient(to bottom, transparent, var(--body-background-fill) 30%) !important; }
+  .dark #composer { background: linear-gradient(to bottom, transparent, rgba(6,9,18,.96) 30%) !important; }
+  #composer-row { align-items: flex-end !important; gap: 8px !important; flex-wrap: nowrap !important; }
+  #composer #composer-row > .block, #composer #composer-row > div:has(textarea) { border-radius: 24px !important;
+    padding: 3px 5px 3px 12px !important; min-width: 0 !important; box-shadow: 0 8px 28px rgba(0,0,0,.22) !important; }
+  #composer textarea { font-size: 16px !important; line-height: 1.4 !important; padding: 11px 6px !important; max-height: 132px; }
+  #composer textarea::placeholder { font-size: 14px !important; font-family: inherit !important; letter-spacing: 0 !important; opacity: .6; }
+  #composer .submit-button, #composer .stop-button { width: 40px !important; height: 40px !important; min-width: 40px !important;
+    align-self: flex-end; margin-bottom: 2px !important; }
+  #attach-btn { flex: 0 0 46px !important; min-width: 46px !important; width: 46px !important; height: 46px !important; margin-bottom: 1px !important; }
+  #examples .gallery { justify-content: flex-start !important; padding: 0 0 2px !important; gap: 7px !important;
+    scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  #examples .gallery-item, #examples button { height: 38px !important; font-size: 13px !important; padding: 0 14px !important; scroll-snap-align: start; }
+  #chat-col:has(#chat .message-row) #examples { display: none !important; }
+  #img-in { max-width: 100% !important; }
+
+  /* ---------- touch-friendly controls everywhere ---------- */
+  .tabitem button.primary, .tabitem button.secondary, .tabitem button.stop { min-height: 44px !important; border-radius: 12px !important; font-size: 14.5px; }
+  .tabitem button.sm, .tabitem button.small { min-height: 40px !important; }
+  .tabitem .wrap > label:has(input[type="radio"]), .tabitem .wrap > label:has(input[type="checkbox"]) { min-height: 42px; align-items: center; }
+  .tabitem .tabs > .tab-wrapper { position: static !important; left: auto !important; width: auto !important; height: auto !important;
+    opacity: 1 !important; pointer-events: auto !important; overflow: visible !important; margin: 0 0 10px !important; }
+  .tabitem .tabs .tab-container { overflow-x: auto !important; flex-wrap: nowrap !important; gap: 6px; padding: 2px 0 4px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .tabitem .tabs [role="tab"] { min-height: 40px; padding: 0 15px !important; font-size: 13.5px; flex: 0 0 auto; }
+  #composer textarea, #img-prompt textarea, #term-in textarea, #kali-in textarea, #kali-ai-in textarea, #il-op-in textarea,
+  #il-cmd-in textarea, #kali-ref-search input, #kali-connect input, #kali-connect textarea,
+  .tabitem input[type="text"], .tabitem input[type="password"], .tabitem input[type="number"], .tabitem input[type="search"],
+  .tabitem textarea:not([disabled]):not([readonly]) { font-size: 16px !important; }
+  .tabitem .prose table, .tabitem .md table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabitem .prose pre, .tabitem .md pre { max-width: 100%; overflow-x: auto; }
+  .tabitem .prose, .tabitem .md { overflow-wrap: anywhere; }
+  .tabitem .prose img, .tabitem .md img { max-width: 100%; height: auto; }
+  .admin-card { padding: 14px !important; border-radius: 16px !important; min-height: 0 !important; }
+  .admin-acc > .label-wrap { padding: 0 14px !important; min-height: 48px; }
+  .stor-grid, .il-grid, .ki-grid, .gs-row { grid-template-columns: 1fr !important; }
+
+  /* ---------- Images ---------- */
+  #img-wrap { gap: 10px !important; }
+  .img-hero h2 { font-size: 1.3rem; }
+  .img-hero p { font-size: .88rem; line-height: 1.5; }
+  #img-controls > * { flex: 1 1 100% !important; min-width: 0 !important; }
+  #img-controls .wrap { display: flex !important; flex-wrap: nowrap !important; overflow-x: auto; gap: 7px; padding-bottom: 2px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #img-controls .wrap::-webkit-scrollbar { display: none; }
+  #img-controls .wrap > label { flex: 0 0 auto; white-space: nowrap; }
+  #img-gen { min-height: 48px !important; font-size: 15.5px !important; }
+  #img-out { height: auto !important; min-height: 240px; max-height: 62dvh; }
+
+  /* ---------- Terminal ---------- */
+  #term-card { padding: 12px !important; border-radius: 16px !important; gap: 10px !important; }
+  #term-card .row:has(#term-shell) { flex-direction: column !important; align-items: stretch !important; gap: 8px !important; }
+  #term-card .row:has(#term-shell) > * { width: 100% !important; min-width: 0 !important; flex: 0 0 auto !important; }
+  #term-shell .wrap { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
+  #term-shell label { height: 38px !important; flex: 0 0 auto; white-space: nowrap; }
+  #term-cwd { text-align: left !important; overflow-wrap: anywhere; }
+  #term-out textarea { font-size: 12.5px !important; height: 42dvh !important; max-height: 42dvh !important; }
+  #term-in .submit-button { height: 46px !important; min-width: 64px; }
+  #term-in textarea { padding: 12px 13px !important; }
+
+  /* ---------- Kali ---------- */
+  #kali-wrap { padding: 10px 10px 16px !important; border-radius: 16px !important; min-height: 0 !important; gap: 10px !important; }
+  #kali-desk { padding: 0 !important; }
+  #kali-desk-txt { padding: 0 0 4px !important; }
+  #kali-desk-txt .kd-title { font-size: 13.5px !important; white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; }
+  #kali-desk-txt .kd-txt > div:last-child { min-width: 0; }
+  #kali-desk-actions { position: static !important; width: 100% !important; max-width: none !important; margin: 0 0 8px !important;
+    gap: 8px !important; flex-wrap: nowrap !important; }
+  #kali-desk-actions > *, #kali-desk-reload, #kali-desk-full { flex: 1 1 0 !important; min-width: 0 !important; width: auto !important;
+    height: 40px !important; min-height: 40px !important; font-size: 13px !important; border-radius: 10px !important; }
+  .kdesk-frame { height: 58dvh !important; min-height: 300px !important; }
+  #kali-head { flex-wrap: wrap !important; gap: 8px !important; }
+  #kali-head > * { min-width: 0 !important; }
+  #kali-title, #kali-title * { font-size: 16px !important; line-height: 1.3 !important; }
+  #kali-main { flex-direction: column !important; gap: 10px !important; }
+  #kali-term-col, #kali-ref-col { flex: 1 1 100% !important; width: 100% !important; min-width: 0 !important; }
+  #kali-term-head { flex-wrap: wrap !important; row-gap: 8px !important; }
+  #kali-term-head > *:first-child { flex: 1 1 100% !important; }
+  #kali-term-head > *:last-child { flex: 1 1 auto !important; }
+  .term-chrome .term-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #kali-ref, #kali-ref-view { min-height: 0 !important; height: auto !important; }
+  #kali-connect-toggle, #kali-ctrlc, #kali-term-head button { min-height: 40px !important; }
+  .tabitem button.label-wrap, .tabitem .label-wrap { min-height: 44px; }
+  #learn-wrap button { min-height: 40px; }
+  .nb-eye { padding: 10px !important; right: 2px !important; }
+  #kali-out textarea { font-size: 12px !important; height: 46dvh !important; }
+  #kali-in .submit-button { height: 46px !important; }
+  #kali-ai .row { flex-wrap: nowrap !important; }
+  #kali-ai-run { min-height: 46px !important; height: 46px !important; flex: 0 0 auto !important; min-width: 72px !important; }
+  #kali-ai .row > .block:has(textarea), #kali-ai .row > div:has(textarea) { min-width: 0 !important; flex: 1 1 auto !important; }
+  #kali-connect-btns .gr-button, #kali-connect-btns button { height: 42px !important; min-height: 42px !important; font-size: 13.5px !important; }
+  #kali-power-btns .gr-button, #kali-power-btns button { flex: 1 1 46% !important; min-height: 42px !important; }
+  #kali-ref-view { max-height: 52dvh !important; overflow-y: auto; }
+  #kali-ref-view code { font-size: 12.5px; padding: 3px 6px; }
+
+  /* ---------- India Lab ---------- */
+  #il-wrap { gap: 12px !important; }
+  #il-wrap .block:has(> .il-hero), #il-wrap .block:has(> div > .il-hero), #il-wrap .html-container:has(> .il-hero),
+  #il-gridwrap, #il-gridwrap .html-container, #il-readygrid { padding-left: 0 !important; padding-right: 0 !important; }
+  .il-hero { padding: 18px 14px !important; border-radius: 18px !important; }
+  .il-hero h1 { font-size: 1.35rem !important; line-height: 1.2 !important; }
+  .il-hero p { font-size: .9rem !important; line-height: 1.55 !important; }
+  .il-hero .il-safe { font-size: .78rem !important; }
+  .il-hero-badge { font-size: .66rem !important; letter-spacing: .1em !important; }
+  #il-filters > * { flex: 1 1 100% !important; min-width: 0 !important; }
+  #il-filters .wrap { display: flex !important; flex-wrap: nowrap !important; overflow-x: auto; gap: 7px; padding-bottom: 2px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #il-filters .wrap::-webkit-scrollbar { display: none; }
+  #il-filters .wrap > label { flex: 0 0 auto; white-space: nowrap; }
+  .il-card { padding: 13px; }
+  .il-card:hover { transform: none; }
+  .il-what { min-height: 0; }
+  #il-detail { padding: 2px 14px !important; border-radius: 16px !important; }
+  #il-arsenal { padding: 12px !important; }
+  #il-top10 { flex-wrap: nowrap !important; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #il-top10 .il-toolbtn { min-height: 40px !important; font-size: 13px !important; }
+  #il-oprow, #il-cmdrow { flex-wrap: wrap !important; }
+  #il-oprow > .block:has(textarea), #il-oprow > div:has(textarea), #il-cmdrow > .block:has(textarea), #il-cmdrow > div:has(textarea) {
+    flex: 1 1 100% !important; min-width: 0 !important; }
+  #il-op-run, #il-cmd-run, #il-cmd-stop { flex: 1 1 0 !important; min-height: 44px !important; height: 44px !important; }
+  #il-labout textarea { height: 38dvh !important; font-size: 12px !important; }
+  #il-jump, #il-nhrow, #il-actionbar { flex-wrap: wrap !important; gap: 8px !important; }
+
+  /* ---------- lessons / learn ---------- */
+  #lesson-reader h1 { font-size: 1.25rem !important; }
+  #lesson-reader { font-size: 15px; line-height: 1.65; }
+}
+
+/* very small phones (iPhone SE 1st gen, Galaxy Fold cover screen) */
+@media (max-width: 360px) {
+  :root { --nb-pad-l: max(10px, env(safe-area-inset-left, 0px)); --nb-pad-r: max(10px, env(safe-area-inset-right, 0px)); }
+  #nb-mbar button.nbm-btn, #nb-mb-orb { width: 38px; flex-basis: 38px; }
+  #nb-mb-title .t { font-size: 14.5px; }
+  .nb-hero-title { font-size: 19px !important; letter-spacing: .2em; padding-left: .2em; }
+  #attach-btn { flex: 0 0 42px !important; min-width: 42px !important; width: 42px !important; height: 42px !important; margin-bottom: 3px !important; }
+}
+
+/* short screens: landscape phones, or portrait with the keyboard open */
+@media (max-width: 900px) and (max-height: 560px) {
+  .nb-hero { gap: 8px; padding: 6px 6px 0; }
+  .nb-hero-orb { width: 46px; height: 46px; border-radius: 15px; font-size: 17px; animation: none; }
+  .nb-hero-stats { display: none; }
+  #examples { display: none !important; }
+  #nb-hist { max-height: 46dvh; }
+}
+@media (max-width: 900px) and (max-height: 400px) { .nb-hero-sub, .nb-hero-orb { display: none; } }
+
+/* touch devices: no sticky hover states, actions always visible */
+@media (hover: none) {
+  .nbh-del { opacity: .5; }
+  .nbn-item:hover, .il-card:hover, #il-top10 .il-toolbtn:hover, #new-chat:hover, #composer .submit-button:hover { transform: none !important; }
+  #chat .message-buttons button, #chat .icon-button { opacity: .7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nb-hero-orb, #chat .message-row, .il-ars-live { animation: none !important; }
+  .gradio-container .sidebar { transition: none !important; }
+}
+"""
+
+CSS += MOBILE_CSS

@@ -12,11 +12,30 @@ INIT_JS = r"""
 () => {
   try {
     // ---------- theme ----------
+    // mobile stylesheet, injected here as well because this Gradio build can drop some css= rules
+    try {
+      if (!document.getElementById('nb-mobile-css')) {
+        const ms = document.createElement('style'); ms.id = 'nb-mobile-css';
+        ms.textContent = __NB_MOBILE_CSS__;
+        document.head.appendChild(ms);
+      }
+      // let the page draw under the notch / gesture bar so env(safe-area-inset-*) has real values
+      const vp = document.querySelector('meta[name="viewport"]');
+      if (vp && !/viewport-fit/.test(vp.content || '')) vp.content = (vp.content || 'width=device-width, initial-scale=1') + ', viewport-fit=cover';
+      // safety net: never leave the (mobile) drawer hidden if something below fails
+      setTimeout(() => document.body.classList.add('nb-ready'), 1800);
+    } catch (e) {}
+
     const applyTheme = (t) => {
       const dark = t === 'dark';
       document.body.classList.toggle('dark', dark);
       document.querySelectorAll('gradio-app, .gradio-container').forEach(el => el.classList.toggle('dark', dark));
       try { localStorage.setItem('nb-theme', t); } catch(e) {}
+      try {   // phone status bar / browser chrome matches the app background
+        let tc = document.querySelector('meta[name="theme-color"]');
+        if (!tc) { tc = document.createElement('meta'); tc.name = 'theme-color'; document.head.appendChild(tc); }
+        tc.content = dark ? '#060912' : '#f3f3ef';
+      } catch(e) {}
     };
     let saved = 'light';
     try { saved = localStorage.getItem('nb-theme') || 'dark'; } catch(e) {}
@@ -25,7 +44,8 @@ INIT_JS = r"""
     // ---------- left navigation (replaces the top tab bar) + chat-history clicks ----------
     try { if (!window.__nbNav) { window.__nbNav = true;
       // sub-menus that exist as tabs INSIDE a section (rendered lazily, so listed here)
-      const SUBS = { 'Learn': ['Sandbox', 'Guided Labs', 'SOC Sim', 'Progress'] };
+      const SUBS = { 'Learn': ['Sandbox', 'Guided Labs', 'SOC Sim', 'Progress'],
+                     'Dark Lab': ['Terminal', 'Kali Tools'] };
       const split = (txt) => { txt = (txt || '').replace(/\s+/g, ' ').trim();
         const m = txt.match(/^(\S+)\s+(.*)$/); return m ? { ico: m[1], name: m[2] } : { ico: '•', name: txt }; };
       const topBtns = () => {
@@ -107,10 +127,7 @@ INIT_JS = r"""
       }, true);
     } } catch (e) { /* navigation must never break the page */ }
 
-    if (window.innerWidth < 900) {
-      const b = document.querySelector('.sidebar-parent button.toggle-button, button[aria-label="Toggle Sidebar"]');
-      if (b) setTimeout(() => b.click(), 300);
-    }
+    // (phones / small tablets: the sidebar is closed and driven by the mobile shell further down)
 
     // ---------- 🐉 Kali panel: clickable commands + reference height sync ----------
     if (!window.__kaliUI) {
@@ -174,6 +191,20 @@ INIT_JS = r"""
           if (m) m.classList.remove('kopen');
         }
       });
+      // phones: the noVNC desktop is hidden by CSS — also cut its live connection so it
+      // doesn't eat mobile data/battery. Terminal stays fully working. Restores on wider screens.
+      const kaliPhoneMQ = window.matchMedia('(max-width: 760px)');
+      const applyKaliPhone = () => {
+        const f = document.querySelector('#kali-desk-frame iframe');
+        if (!f) return;
+        if (kaliPhoneMQ.matches) {
+          if (f.src && f.src !== 'about:blank') { f.dataset.nbSrc = f.src; f.src = 'about:blank'; }
+        } else if (f.dataset.nbSrc && (!f.src || f.src === 'about:blank')) {
+          f.src = f.dataset.nbSrc; delete f.dataset.nbSrc;
+        }
+      };
+      try { kaliPhoneMQ.addEventListener('change', applyKaliPhone); } catch (e) { try { kaliPhoneMQ.addListener(applyKaliPhone); } catch (e2) {} }
+      setInterval(applyKaliPhone, 1500);   // the iframe is (re)built when the Kali tab first opens
     }
 
     // ---------- 👁 show / hide the hosted API-key field ----------
@@ -215,7 +246,6 @@ INIT_JS = r"""
     addMeta('mobile-web-app-capable', 'yes');
     addMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
     addMeta('apple-mobile-web-app-title', 'Nanban');
-    addMeta('theme-color', '#4f46e5');
 
     if (document.getElementById('nb-tools')) return;
 
@@ -290,6 +320,130 @@ INIT_JS = r"""
       + 'Try: <b style="color:#cfe0ff">open images</b>, <b style="color:#cfe0ff">open kali</b>, '
       + '<b style="color:#cfe0ff">new chat</b>, <b style="color:#cfe0ff">light mode</b>, or just ask anything.</div>';
     document.body.appendChild(cmdWrap);
+
+    // ---------- 📱 mobile shell (<= 900px): top app bar + slide-in drawer + chat that fits the screen ----------
+    try { if (!window.__nbMobile) { window.__nbMobile = true;
+      const mq = window.matchMedia('(max-width: 900px)');
+      const sbEl = () => document.querySelector('.sidebar-parent .sidebar, .gradio-container .sidebar');
+      const sbBtn = () => document.querySelector('.sidebar-parent button.toggle-button, button[aria-label="Toggle Sidebar"]');
+      const sbIsOpen = () => { const s = sbEl(); return !!(s && s.classList.contains('open')); };
+
+      const mbar = document.createElement('header'); mbar.id = 'nb-mbar';
+      const svg = (inner) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+      mbar.innerHTML =
+        '<button type="button" class="nbm-btn" id="nb-mb-menu" aria-label="Open menu">' + svg('<path d="M4 7h16M4 12h16M4 17h10"/>') + '</button>'
+        + '<button type="button" id="nb-mb-title" aria-label="Sections and chat modes"><span class="i"></span>'
+        +   '<span class="tx"><span class="t"></span><span class="s"></span></span></button>'
+        + '<button type="button" class="nbm-btn" id="nb-mb-new" aria-label="New chat">'
+        +   svg('<path d="M12 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/><path d="M17.6 3.6a2 2 0 0 1 2.8 2.8L12 14.8 8.5 15.5l.7-3.5z"/>')
+        + '</button>'
+        + '<span id="nb-mb-orb"></span>'
+        + '<button type="button" class="nbm-btn" id="nb-mb-more" aria-label="Voice and theme tools">'
+        +   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/></svg>'
+        + '</button>';
+      const scrim = document.createElement('div'); scrim.id = 'nb-scrim';
+      document.body.append(mbar, scrim);
+      const tIco = mbar.querySelector('#nb-mb-title .i'), tName = mbar.querySelector('#nb-mb-title .t'), tSub = mbar.querySelector('#nb-mb-title .s');
+      const slot = mbar.querySelector('#nb-mb-orb');
+
+      // the chat log gets exactly the space left on screen (any phone, notch, keyboard open or not)
+      let lastH = 0;
+      const fitChat = () => {
+        const root = document.documentElement;
+        if (!mq.matches) { if (lastH) { lastH = 0; root.style.removeProperty('--nb-chat-h'); } return; }
+        const col = document.getElementById('chat-col'), chat = document.getElementById('chat');
+        if (!col || !chat || col.offsetParent === null) return;
+        const cr = col.getBoundingClientRect(), hr = chat.getBoundingClientRect();
+        const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        const h = Math.max(150, Math.floor(vh - (cr.top + window.scrollY) - (cr.height - hr.height)));
+        if (Math.abs(h - lastH) > 1) { lastH = h; root.style.setProperty('--nb-chat-h', h + 'px'); }
+      };
+
+      const sync = () => {
+        const mobile = mq.matches;
+        document.body.classList.toggle('nb-drawer', mobile && sbIsOpen());
+        const sel = document.querySelector('.tabs > .tab-wrapper button[role="tab"].selected, .tabs > .tab-wrapper button[role="tab"][aria-selected="true"]');
+        const raw = ((sel && sel.innerText) || '💬 Chat').replace(/\s+/g, ' ').trim();
+        const m = raw.match(/^(\S+)\s+(.*)$/); const ico = m ? m[1] : '•', name = m ? m[2] : raw;
+        let sub = '';
+        if (name === 'Chat') { const l = document.querySelector('#modes label.selected'); if (l) sub = (l.innerText || '').replace(/\s+/g, ' ').trim(); }
+        const sig = ico + '|' + name + '|' + sub;
+        if (mbar.dataset.sig !== sig) { mbar.dataset.sig = sig; tIco.textContent = ico; tName.textContent = name; tSub.textContent = sub; }
+        // the Vizhi orb lives in the app bar on phones, in the floating tool stack on desktop
+        const orbEl = document.getElementById('nb-vizhi'), tools = document.getElementById('nb-tools');
+        if (orbEl && tools) {
+          if (mobile && orbEl.parentElement !== slot) slot.appendChild(orbEl);
+          else if (!mobile && orbEl.parentElement !== tools) tools.prepend(orbEl);
+        }
+        const ta = document.querySelector('#composer textarea');
+        if (ta) {
+          if (mobile && !ta.dataset.ph) { ta.dataset.ph = ta.placeholder || ' '; ta.placeholder = 'Message Nanban…'; }
+          else if (!mobile && ta.dataset.ph) { ta.placeholder = ta.dataset.ph; delete ta.dataset.ph; }
+        }
+        if (!mobile) document.body.classList.remove('nb-more');
+        fitChat();
+      };
+      const setDrawer = (want) => {
+        if (sbIsOpen() !== want) { const b = sbBtn(); if (b) b.click(); }
+        setTimeout(sync, 40); setTimeout(sync, 320);
+      };
+      window.__nbDrawer = setDrawer;
+
+      mbar.querySelector('#nb-mb-menu').onclick = () => setDrawer(!sbIsOpen());
+      mbar.querySelector('#nb-mb-title').onclick = () => setDrawer(true);
+      mbar.querySelector('#nb-mb-new').onclick = () => {
+        setDrawer(false); clickTab('Chat');
+        setTimeout(() => { const nc = document.getElementById('new-chat'); if (nc) nc.click(); }, 200);
+      };
+      mbar.querySelector('#nb-mb-more').onclick = () => document.body.classList.toggle('nb-more');
+      scrim.onclick = () => setDrawer(false);
+
+      document.addEventListener('click', (e) => {
+        const t = e.target; if (!t || !t.closest) return;
+        if (document.body.classList.contains('nb-more') && !t.closest('#nb-mb-more'))
+          setTimeout(() => document.body.classList.remove('nb-more'), t.closest('#nb-tools') ? 180 : 0);
+        if (!mq.matches) return;
+        if (t.closest('.nb-mode-chip')) { setDrawer(true); return; }       // tap the mode chip → pick another mode
+        if (!sbIsOpen()) return;
+        // picking a destination closes the drawer; only expanding a sub-menu keeps it open
+        const item = t.closest('.nbn-item');
+        const expands = item && item.querySelector('.nbn-chev')
+          && ((t.classList && t.classList.contains('nbn-chev')) || item.classList.contains('active'));
+        const goes = t.closest('.nbn-subitem, #new-chat') || (t.closest('[data-chat]') && !t.closest('[data-del]')) || (item && !expands);
+        if (goes) setTimeout(() => setDrawer(false), 220);
+      }, true);
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mq.matches && sbIsOpen()) setDrawer(false); });
+
+      // swipe: left on the open drawer closes it · right from the screen edge opens it
+      let sx = 0, sy = 0, st0 = 0;
+      document.addEventListener('touchstart', (e) => { const p = e.touches[0]; sx = p.clientX; sy = p.clientY; st0 = Date.now(); }, { passive: true });
+      document.addEventListener('touchend', (e) => {
+        if (!mq.matches) return;
+        const p = e.changedTouches[0]; const dx = p.clientX - sx, dy = p.clientY - sy;
+        if (Date.now() - st0 > 600 || Math.abs(dy) > 60) return;
+        if (sbIsOpen() && dx < -70) setDrawer(false);
+        else if (!sbIsOpen() && sx < 22 && dx > 80) setDrawer(true);
+      }, { passive: true });
+
+      const boot = (n) => {
+        if (mq.matches) {
+          if (!sbBtn() && n < 40) { setTimeout(() => boot(n + 1), 100); return; }
+          setDrawer(false);
+          const a = document.activeElement;                 // don't pop the keyboard up on page load
+          if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT')) a.blur();
+        }
+        setTimeout(() => document.body.classList.add('nb-ready'), mq.matches ? 340 : 0);
+        sync();
+      };
+      boot(0);
+      const onMq = () => { if (mq.matches) setDrawer(false); sync(); };
+      if (mq.addEventListener) mq.addEventListener('change', onMq); else if (mq.addListener) mq.addListener(onMq);
+      window.addEventListener('resize', fitChat);
+      window.addEventListener('orientationchange', () => setTimeout(sync, 250));
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', fitChat);
+      setInterval(sync, 400);
+    } } catch (e) { /* the mobile shell must never break the page */ }
 
     // ---------- first-run welcome card (one time, modern) ----------
     try {
@@ -747,3 +901,10 @@ INIT_JS = r"""
   } catch (e) { /* never break the page */ }
 }
 """
+
+# The phone stylesheet travels inside the script too (see the top of INIT_JS).
+import json as _json
+
+import ui_theme as _ui_theme
+
+INIT_JS = INIT_JS.replace("__NB_MOBILE_CSS__", _json.dumps(_ui_theme.MOBILE_CSS))

@@ -262,6 +262,7 @@ def main() -> None:
         app.demo.queue().launch(
             inbrowser=False, server_name="127.0.0.1", server_port=p,
             theme=ui_theme.theme(), css=app.CSS, footer_links=[], pwa=True,
+            ssr_mode=False,   # pure-Python serve; SSR needs Node.js and otherwise breaks the localhost check
             favicon_path=str(APP_DIR / "assets" / "nanban.png"),
         )
 

@@ -41,8 +41,6 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140
 ONION_RE = r"[a-z2-7]{56}\.onion"
 AHMIA = "https://ahmia.fi/"
 AHMIA_ONION = "http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/"
-DDG_ONION = "https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/"
-TORPROJECT_ONION = "http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/"
 HOME = os.path.expanduser("~/dark-osint")
 MAX_PAGE = 25 * 1024 * 1024
 MAX_DOWNLOAD = 500 * 1024 * 1024
@@ -458,7 +456,7 @@ class Browser:
             if p.returncode in (7, 97):
                 hint = " — onion service offline/unreachable, or Tor still building a circuit"
             elif p.returncode == 28:
-                hint = " — timed out (onion services can be slow; try: reload)"
+                hint = " — timed out (the site is slow or blocks Tor; try: reload or newid)"
             elif p.returncode == 63:
                 hint = " — file too large for a page (use: download)"
             raise ConnectionError(f"{msg}{hint}")
@@ -580,7 +578,6 @@ class Browser:
         print(B("  Explore. Investigate. Analyze.") + D("   (no JavaScript · per-site circuits · session-only cookies)"))
         print()
         for k, d in (("search <words>", "search onion services (Ahmia)"),
-                     ("ddg <words>", "search the normal web via DuckDuckGo's onion"),
                      ("open <url>", "open any http/https/.onion address"),
                      ("check", "verify traffic really goes through Tor"),
                      ("circuit / newid", "show the Tor circuit / get a new identity"),
@@ -680,7 +677,8 @@ class Browser:
             path = target[0].split()[2].split(",")
             print(B(f"  Tor circuit{' for ' + site_of(pg.url) if mine else ' (latest general circuit)'}:"))
             print(f"    {G('●')} This browser")
-            roles = ["Guard", "Middle", "Exit"] if len(path) <= 3 else ["Guard"] + ["Relay"] * (len(path) - 1)
+            onion = bool(pg) and (urlsplit(pg.url).hostname or "").endswith(".onion")
+            roles = ["Guard", "Middle", "Exit"] if len(path) <= 3 and not onion else ["Guard"] + ["Relay"] * (len(path) - 1)
             for i, hop in enumerate(path):
                 fp, _, nick = hop.lstrip("$").partition("~")
                 ip, cc = "?", "??"
@@ -692,7 +690,6 @@ class Browser:
                 except OSError:
                     pass
                 print(f"    {G('│')}\n    {G('●')} {roles[min(i, len(roles) - 1)]:<7}{nick or fp[:8]:<22}{ip:<17}{cc.upper()}")
-            onion = pg and (urlsplit(pg.url).hostname or "").endswith(".onion")
             print(f"    {G('│')}\n    {G('●')} {'Onion service (3 more hidden relays)' if onion else (site_of(pg.url) if pg else 'Internet')}")
             info(f"{len(rows)} circuits built · Tor {ct.info('version')}")
         except OSError as e:
@@ -715,9 +712,8 @@ class Browser:
         else:
             bad("Tor check", f"NOT using Tor! ({txt.strip()[:120]})")
 
-    def search(self, q: str, engine="ahmia"):
-        if engine == "ddg":
-            return self.go(DDG_ONION + "html/?" + urlencode({"q": q}))
+    def search_url(self, q: str) -> str | None:
+        """Ahmia needs the hidden anti-bot token from its own search form, so read the form first."""
         for base in (AHMIA, AHMIA_ONION):
             try:
                 home = self.fetch(base)
@@ -728,8 +724,17 @@ class Browser:
             qname = next((f["name"] for f in (form["fields"] if form else []) if f["ask"]), "q")
             params[qname] = q
             action = form["action"] if form else urljoin(base, "/search/")
-            return self.go(action + ("&" if "?" in action else "?") + urlencode(params))
-        err("Ahmia is unreachable right now — try: ddg <words>")
+            return action + ("&" if "?" in action else "?") + urlencode(params)
+        return None
+
+    def search(self, q: str):
+        print(D("  ⟳ asking Ahmia via Tor…"), end="\r", flush=True)
+        url = self.search_url(q)
+        print(" " * 40, end="\r")
+        if url:
+            self.go(url)
+        else:
+            err("Ahmia is unreachable right now — try again in a moment (or: newid)")
 
     def form(self, n: str):
         pg = self.cur()
@@ -797,6 +802,7 @@ def run(cmd: list[str], show=True, pipe_to: list[str] | None = None, out_file: s
     if not shutil.which(cmd[0]):
         err(f"'{cmd[0]}' is not installed — re-run the installer (dark-osint-install.sh)")
         return 127
+    sys.stdout.flush()
     try:
         if pipe_to or out_file:
             p1 = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -947,7 +953,7 @@ def tool(br: Browser, name: str, args: list[str]) -> None:
     elif name == "hash":
         run(["sha256sum", path])
     elif name == "urls":
-        run(["strings", "-n", "8", path], pipe_to=["grep", "-Ei", r"https?://|\.onion"])
+        run(["strings", "-n", "8", path], pipe_to=["grep", "-aEi", r"https?://|\.onion"])
     elif name == "indicators":
         run(["jq", "-r", ".indicators[]?", path])
 
@@ -957,9 +963,9 @@ def tool(br: Browser, name: str, args: list[str]) -> None:
 HELP = """
   BROWSE
     open <url> | <url>      open a page (http, https, .onion)        search <words>   onion search (Ahmia)
-    <number>                follow link number                        ddg <words>      web search (DuckDuckGo onion)
-    Enter                   next screen of the page                   form [n]         fill in + submit a form
-    back / forward / reload                                           links [filter]   list links on the page
+    <number>                follow link number                        form [n]         fill in + submit a form
+    Enter                   next screen of the page                   links [filter]   list links on the page
+    back / forward / reload
     top / page              re-show the page from the top             find <text>      search inside the page
     history                 pages visited this session                bookmark / bookmarks [n]
     info / source           response headers / raw HTML               home             start screen
@@ -1033,8 +1039,6 @@ def repl(br: Browser, first_url: str | None):
                 br.go(rest) if rest else err("usage: open <url>")
             elif low in ("s", "search"):
                 br.search(rest) if rest else err("usage: search <words>")
-            elif low == "ddg":
-                br.search(rest, "ddg") if rest else err("usage: ddg <words>")
             elif low in ("b", "back"):
                 if br.idx > 0:
                     br.idx -= 1
@@ -1139,26 +1143,22 @@ def main(argv: list[str]) -> int:
     if a == "tools":
         show_tools()
         return 0
-    if a in ("dump", "search", "ddg"):
+    if a in ("dump", "search"):
         if len(argv) < 2:
             err(f"usage: dark-osint {a} <{'url' if a == 'dump' else 'words'}>")
             return 2
         if not start_tor(quiet=True):
             err("Tor is not running")
             return 1
-        global TTY
-        if a == "dump":
-            try:
-                pg = br.fetch(argv[1])
-            except (ConnectionError, ValueError, OSError) as e:
-                err(str(e))
+        try:
+            url = argv[1] if a == "dump" else br.search_url(" ".join(argv[1:]))
+            if not url:
+                err("Ahmia is unreachable right now")
                 return 1
-            br.hist, br.idx = [pg], 0
-        else:
-            br.search(" ".join(argv[1:]), "ddg" if a == "ddg" else "ahmia")
-            pg = br.cur()
-            if not pg:
-                return 1
+            pg = br.fetch(url)
+        except (ConnectionError, ValueError, OSError) as e:
+            err(str(e))
+            return 1
         print(f"{pg.title}\n{pg.url}  [HTTP {pg.status}]\n")
         print("\n".join(pg.lines))
         if pg.links:
@@ -1174,6 +1174,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import signal
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)   # `dark-osint … | head` exits quietly
     try:
         sys.exit(main(sys.argv[1:]))
     except KeyboardInterrupt:

@@ -218,7 +218,7 @@ Reply with ONE JSON object and nothing else:
 {"action": "...", "target": "...", "say": "..."}
 
 Actions:
-- "open_section": show an app section. target = exactly one of: Chat, Images, Terminal, Security, Kali, India Lab, Learn, Admin
+- "open_section": show an app section. target = exactly one of: Chat, Images, Terminal, Security, Kali, India Lab, Dark Lab, Learn, Admin
 - "set_mode": change the chat persona. target = one of: Vizhi, Personal Assistant, Coding, Writing, Research, Study, Business, Security Tutor, Computer
 - "new_chat": start a fresh conversation. target = ""
 - "theme": target = "dark" or "light"
@@ -370,7 +370,8 @@ def on_load(request: gr.Request = None):
     show_security = getattr(config, "SECURITY_TAB", True) and security_hub.available()
     return (memory_markdown(user), tasks_markdown(user), status_markdown(), gr.update(visible=is_admin),
             gr.update(visible=is_admin), brand_html(user), topbar_html(), gr.update(visible=show_security),
-            gr.update(visible=show_security), gr.update(visible=show_security), gr.update(visible=show_security))
+            gr.update(visible=show_security), gr.update(visible=show_security), gr.update(visible=show_security),
+            gr.update(visible=show_security))
 
 
 # ---------------------------------------------------------------- layout
@@ -436,7 +437,7 @@ def topbar_html() -> str:
         "}"
         # --- phone / iPhone ---
         "@media (max-width: 560px){"
-        " .contain > .column{ gap:8px !important; padding:0 2px; }"
+        " .contain > .column{ gap:8px !important; }"
         " #topbar{ flex-wrap:wrap; gap:4px; }"
         " #modes label{ flex:1 1 100% !important; }"          # mode chips full width
         " .contain textarea, .contain input[type=text]{ font-size:16px !important; }"  # no iOS zoom-on-focus
@@ -444,11 +445,7 @@ def topbar_html() -> str:
         " #img-controls > *, #il-filters > *{ flex:1 1 100% !important; }"
         " .il-hero h1{ font-size:1.4rem !important; }"
         " #kali-out textarea{ font-size:12px !important; }"
-        # keep the Vizhi orb + tools comfortably in reach on phones
-        " #nb-tools{ right:10px !important; bottom:84px !important; gap:7px !important; }"
-        " #nb-vizhi{ width:52px !important; height:52px !important; font-size:23px !important; }"
-        " #nb-tools button:not(#nb-vizhi){ width:38px !important; height:38px !important; font-size:16px !important; }"
-        " #nb-jcap{ right:62px !important; bottom:150px !important; max-width:190px !important; font-size:12px !important; }"
+        # (the Vizhi orb + voice tools live in the mobile app bar — see ui_theme.MOBILE_CSS)
         "}"
         "</style>")
     return (spacing +
@@ -568,6 +565,10 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
             import india_lab_panel
             india_lab_panel.build()
 
+        with gr.Tab("🕶️ Dark Lab", visible=False) as dark_tab:
+            import dark_lab_panel
+            dark_lab_panel.build()
+
         with gr.Tab("📚 Learn", visible=False) as learn_tab:
             import learn_panel
             learn_panel.build()
@@ -598,7 +599,7 @@ with gr.Blocks(title=f"{config.AGENT_NAME}", fill_height=True) as demo:
     term_in.submit(run_terminal, [term_in, term_shell], [term_out, term_cwd, term_in])
     explain_btn.click(explain_terminal, [agent_state, allow_actions], [explain_out, agent_state])
     import web_extras
-    demo.load(on_load, None, [memory_view, tasks_view, status_view, admin_tab, terminal_tab, hello_view, topbar, security_tab, kali_tab, india_tab, learn_tab],
+    demo.load(on_load, None, [memory_view, tasks_view, status_view, admin_tab, terminal_tab, hello_view, topbar, security_tab, kali_tab, india_tab, learn_tab, dark_tab],
               js=web_extras.INIT_JS)
 
 
@@ -660,5 +661,6 @@ if __name__ == "__main__":
         inbrowser=open_browser, server_name=host, server_port=config.WEB_PORT, auth=auth,
         auth_message=f"{config.AGENT_NAME}: user is 'nanban', password is WEB_PASSWORD from config.py" if auth else None,
         theme=ui_theme.theme(), css=CSS, footer_links=[], pwa=True,
+        ssr_mode=False,   # pure-Python serve; SSR needs Node.js and otherwise breaks the localhost check
         favicon_path=str(config.BASE_DIR / "assets" / "nanban.png"),
     )

@@ -549,6 +549,17 @@ _KALI_CSS = """<style>
   #kali-ref { flex:0 0 auto !important; }
   #kali-ref-view { flex:0 0 auto !important; max-height:50vh !important; }
 }
+
+/* phones: skip the heavy noVNC desktop entirely, show the terminal only */
+#kali-mobile-hint { display:none; }
+@media (max-width: 760px) {
+  #kali-desk { display:none !important; }
+  #kali-mobile-hint { display:block !important; margin:2px 0 6px; padding:9px 13px;
+    border:1px solid #2a2420; border-radius:12px; background:rgba(214,85,46,.08);
+    color:var(--body-text-color-subdued); font-size:12.5px; line-height:1.4; }
+  #kali-mobile-hint b { color:#d6552e; }
+  #kali-out textarea { height:62vh !important; }
+}
 </style>"""
 
 
@@ -640,6 +651,10 @@ def build() -> None:
             js="() => { const f=document.querySelector('#kali-desk-frame iframe'); if (f) f.src = f.src; }")
         desk_full.click(open_desktop, None, [desk_status, desk_url]).then(
             None, desk_url, None, js="(u) => { if (u) window.open(u, '_blank'); }")
+
+        gr.HTML('<div id="kali-mobile-hint">📱 Mobile-la full desktop skip pannitten '
+                '(phone-ku bhaaram). <b>Kali terminal keezha ready</b> — command type pannu, '
+                'illa AI Shell-la Tanglish-la kேlu. Full desktop venumna periya screen-la open pannu.</div>')
 
         with gr.Row(elem_id="kali-head"):
             gr.Markdown("### 🐉 Kali Linux — terminal + AI, together", elem_id="kali-title")
